@@ -1,0 +1,17 @@
+{
+  "name": "okulist",
+  "version": "3.0.0",
+  "description": "Auto-dépistage visuel dans le navigateur, calibré sur l'écran (outil indicatif, non médical)",
+  "private": true,
+  "scripts": {
+    "test": "node --test 'test/*.test.mjs'",
+    "build": "node tools/build.mjs",
+    "e2e": "playwright test",
+    "serve": "npx --yes serve -l 8123 ."
+  },
+  "repository": "github:yrbane/okulist",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}
