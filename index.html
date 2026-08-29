@@ -374,10 +374,12 @@ function saveCalib(){
 }
 
 /* ---------------- step engine ---------------- */
-const CHIPS = ["Calibrage","Acuité","Duochrome","Astigmatisme","Contraste","Près","Amsler","Couleurs","Fatigue","Bilan"];
+const CHIPS = ["Calibrage","Acuité","Duochrome","Astigmatisme","Contraste","Vernier","Près","Lecture","Tache aveugle","Amsler","Couleurs","Fatigue","Bilan"];
 let steps = [];
 let cur = 0;
 let keyHandler = null;
+let spaceHandler = null;
+let stepCleanup = null;
 
 function renderChips(){
   const el = $("#chips"); el.innerHTML = "";
@@ -397,7 +399,8 @@ function renderChips(){
 }
 function goTo(i){
   cur = Math.max(0, Math.min(i, steps.length-1));
-  keyHandler = null;
+  keyHandler = null; spaceHandler = null;
+  if(stepCleanup){ try{ stepCleanup(); }catch(e){} stepCleanup = null; }
   stage.innerHTML = "";
   renderChips();
   steps[cur].render(stage);
@@ -409,6 +412,7 @@ const KEYDIRS = {ArrowRight:0, ArrowDown:90, ArrowLeft:180, ArrowUp:270,
   "6":0, "3":45, "2":90, "1":135, "4":180, "7":225, "8":270, "9":315};
 document.addEventListener("keydown", e=>{
   if(keyHandler && e.key in KEYDIRS){ e.preventDefault(); keyHandler(KEYDIRS[e.key]); }
+  else if(spaceHandler && (e.key===" " || e.code==="Space")){ e.preventDefault(); spaceHandler(); }
 });
 
 function navRow(el, opts={}){
@@ -893,6 +897,163 @@ function stepColor(el){
   navRow(el, {noNext:true, skippable:true});
 }
 
+/* ---------------- step: vernier ---------------- */
+function stepVernier(el){
+  el.innerHTML = `<h2>Acuité vernier (hyperacuité)</h2>
+    <p class="lede">Deux traits verticaux, l'un au-dessus de l'autre. Le trait du <b>haut</b> est
+    très légèrement décalé — vers la gauche ou la droite ? Ce test d'alignement mesure une finesse
+    supérieure au pixel de l'écran (rendu sous-pixel). Les deux yeux ouverts, à ${S.distCm} cm.
+    Flèches ← → du clavier ou boutons.</p>
+    <div class="chart"><div id="vbox" style="min-height:120px; display:flex; align-items:center; justify-content:center"></div>
+    <div class="trialinfo" id="tinfo" aria-live="polite"></div></div>
+    <div class="btnrow" style="justify-content:center">
+      <button id="vleft" style="min-width:110px">← Gauche</button>
+      <button id="vright" style="min-width:110px">Droite →</button>
+    </div>`;
+  const stair = core.createStaircase(core.VERNIER_ARCSEC.length, {passNeed:3, maxTrials:4});
+  let side = Math.random()<.5 ? -1 : 1;
+  const len = Math.max(30, mm(12)), gap = Math.max(4, mm(1.5)), w = 2;
+  const vbox=$("#vbox"), tinfo=$("#tinfo");
+  function show(){
+    const arcsec = core.VERNIER_ARCSEC[stair.state.level];
+    const off = core.vernierOffsetPx(arcsec, S.distCm, S.pxmm)*side;
+    const W = 60, cx = W/2;
+    vbox.innerHTML = `<svg width="${W}" height="${2*len+gap}" viewBox="0 0 ${W} ${2*len+gap}">
+      <rect x="${cx-w/2+off}" y="0" width="${w}" height="${len}" fill="#000"/>
+      <rect x="${cx-w/2}" y="${len+gap}" width="${w}" height="${len}" fill="#000"/></svg>`;
+    tinfo.textContent = "décalage "+arcsec+"″ d'arc";
+  }
+  function answer(dirSide){
+    const st = stair.answer(dirSide===side);
+    side = Math.random()<.5 ? -1 : 1;
+    if(st.done){
+      S.res.vernier = { arcsec: st.result==null ? null : core.VERNIER_ARCSEC[st.result] };
+      return next();
+    }
+    show();
+  }
+  $("#vleft").onclick=()=>answer(-1);
+  $("#vright").onclick=()=>answer(1);
+  keyHandler = a => { if(a===180) answer(-1); else if(a===0) answer(1); };
+  show();
+  navRow(el, {noNext:true, skippable:true});
+}
+
+/* ---------------- step: reading speed (type MNREAD simplifié) ---------------- */
+const READ_ITEMS = [
+  { t:"La vieille horloge de la gare sonnait sept coups dans le brouillard.", w:12 },
+  { t:"Un jardinier patient taillait les rosiers le long du mur de pierre.", w:12 },
+  { t:"Les pêcheurs rangeaient leurs filets avant l'arrivée de la marée haute.", w:11 },
+  { t:"Une odeur de café chaud flottait dans la petite cuisine claire.", w:11 },
+  { t:"Le facteur posa deux lettres et un colis sur le banc vert.", w:12 },
+  { t:"Des nuages roses glissaient doucement au-dessus des toits de la ville.", w:11 }
+];
+function stepReading(el){
+  el.innerHTML = `<h2>Vitesse de lecture</h2>
+    <p class="lede">À ${S.distCm} cm, comme au travail. Une phrase s'affiche à des tailles décroissantes :
+    cliquez sur « Afficher la phrase », lisez-la silencieusement, cliquez sur « Lu ! » dès la fin.
+    On mesure votre vitesse à chaque taille pour trouver la <b>taille critique</b> sous laquelle la
+    lecture ralentit — c'est elle qui guide la taille de texte à régler sur le Mac.</p>
+    <div class="chart"><div id="rline" style="min-height:80px; display:flex; align-items:center; justify-content:center"></div>
+    <div class="trialinfo" id="tinfo"></div></div>
+    <div class="btnrow" style="justify-content:center" id="rbtns"></div>`;
+  const samples = [];
+  let i = 0, t0 = null;
+  const rline=$("#rline"), tinfo=$("#tinfo"), rbtns=$("#rbtns");
+  function finish(){
+    const stats = core.readingStats(samples);
+    if(stats) S.res.reading = Object.assign({samples}, stats);
+    next();
+  }
+  function ready(){
+    if(i>=NEAR_SIZES.length) return finish();
+    rline.innerHTML = "";
+    tinfo.textContent = "taille "+(i+1)+" / "+NEAR_SIZES.length+" — "+NEAR_SIZES[i].toLocaleString("fr-FR")+" mm";
+    rbtns.innerHTML = "";
+    const b=document.createElement("button"); b.className="primary"; b.textContent="Afficher la phrase";
+    b.onclick=go; rbtns.appendChild(b);
+  }
+  function go(){
+    const item = READ_ITEMS[i];
+    rline.innerHTML = `<div style="font-size:${fontPxForCapMm(NEAR_SIZES[i])}px; line-height:1.3; color:#000">${item.t}</div>`;
+    t0 = performance.now();
+    rbtns.innerHTML = "";
+    const lu=document.createElement("button"); lu.className="primary"; lu.textContent="Lu !";
+    lu.onclick=()=>{
+      const minutes = (performance.now()-t0)/60000;
+      samples.push({ mm: NEAR_SIZES[i], wpm: item.w/minutes });
+      i++; ready();
+    };
+    const ko=document.createElement("button"); ko.className="ghost"; ko.textContent="Illisible";
+    ko.onclick=()=>{ samples.push({ mm: NEAR_SIZES[i], wpm: 0 }); finish(); };
+    rbtns.append(lu, ko);
+  }
+  ready();
+  navRow(el, {noNext:true, skippable:true});
+}
+
+/* ---------------- step: blind spot (per eye) ---------------- */
+function blindStep(eye){ return { chip:"Tache aveugle", render(el){
+  const fixLeft = eye==="od"; // œil droit : croix à gauche, la tache aveugle est du côté temporal
+  const DIST = 40; // cm, imposé pour que ~19° tiennent sur l'écran
+  el.innerHTML = `<h2>Tache aveugle — ${EYES[eye].name}</h2>
+    <p class="lede">Chaque œil a une zone sans photorécepteurs, invisible au quotidien.
+    <b>Rapprochez-vous à ~40 cm.</b> Fixez la croix <b>sans jamais la quitter des yeux</b>, et suivez
+    le point ${fixLeft ? "qui s'éloigne vers la droite" : "qui s'éloigne vers la gauche"} en vision
+    périphérique. Appuyez sur <kbd>espace</kbd> (ou le bouton) quand le point <b>disparaît</b>,
+    puis à nouveau quand il <b>réapparaît</b>.</p>
+    ${eyeBanner(eye)}
+    <div class="chart"><div id="bs" style="position:relative; height:90px"></div>
+    <div class="trialinfo" id="tinfo" aria-live="polite">fixez la croix — le point se déplace…</div></div>
+    <div class="btnrow" style="justify-content:center">
+      <button class="primary" id="mark" style="min-width:200px">Le point a disparu</button>
+      <button class="ghost" id="nosee">Je ne l'ai pas vu disparaître</button>
+    </div>`;
+  const box=$("#bs"), tinfo=$("#tinfo"), markBtn=$("#mark");
+  const W = box.clientWidth || stage.clientWidth-80;
+  const margin = 18, crossX = fixLeft ? margin : W-margin;
+  const sgn = fixLeft ? 1 : -1;
+  const maxDeg = Math.min(24, core.pxToDeg(W-2*margin-12, DIST, S.pxmm));
+  box.innerHTML = `<div style="position:absolute; top:34px; left:${crossX-9}px; font-size:22px; font-weight:700">✚</div>
+    <div id="dot" style="position:absolute; top:38px; width:${Math.max(9,mm(3))}px; height:${Math.max(9,mm(3))}px; border-radius:50%; background:#111"></div>`;
+  const dot=$("#dot");
+  let deg = 7, phase = 0, d1=null, raf=null, last=null;
+  const SPEED = 1.1; // degrés par seconde
+  function place(){
+    const x = crossX + sgn*core.degToPx(deg, DIST, S.pxmm);
+    dot.style.left = (x - dot.offsetWidth/2)+"px";
+  }
+  function tick(ts){
+    if(last!=null) deg += SPEED*(ts-last)/1000;
+    last = ts;
+    if(deg>=maxDeg){
+      if(phase===0){ S.res["blind_"+eye]={center:null,width:null}; return next(); }
+      S.res["blind_"+eye]={center:+(((d1+maxDeg)/2).toFixed(1)), width:+((maxDeg-d1).toFixed(1)), capped:true};
+      return next();
+    }
+    place();
+    raf = requestAnimationFrame(tick);
+  }
+  function mark(){
+    if(phase===0){
+      d1 = deg; phase=1;
+      markBtn.textContent = "Le point est réapparu";
+      tinfo.textContent = "disparu à "+d1.toFixed(1)+"° — continuez de fixer la croix";
+    }else{
+      cancelAnimationFrame(raf);
+      S.res["blind_"+eye] = { center:+(((d1+deg)/2).toFixed(1)), width:+((deg-d1).toFixed(1)) };
+      next();
+    }
+  }
+  markBtn.onclick = mark;
+  spaceHandler = mark;
+  $("#nosee").onclick = ()=>{ S.res["blind_"+eye]={center:null,width:null}; next(); };
+  stepCleanup = ()=>cancelAnimationFrame(raf);
+  place();
+  raf = requestAnimationFrame(tick);
+  navRow(el, {noNext:true, skippable:true});
+}};}
+
 /* ---------------- step: digital eye strain questionnaire ---------------- */
 const STRAIN_Q = [
   "Yeux secs, qui piquent ou qui brûlent devant l'écran",
@@ -938,7 +1099,8 @@ function pill(kind, txt){ return `<span class="pill ${kind}">${txt}</span>`; }
 function stepResults(el){
   const r = S.res;
   const flags = { lowAcu:false, veryLow:false, astig:false, lowCtr:false, presby:false,
-                  amsler:false, color:false, tritan:false, myopic:false, hyperopic:false, strain:false };
+                  amsler:false, color:false, tritan:false, myopic:false, hyperopic:false, strain:false,
+                  bigText:false, blind:false };
   let rows = "";
 
   /* acuity */
@@ -999,6 +1161,39 @@ function stepResults(el){
       ${pill(ev.kind, ev.label)}</div>`;
   }
 
+  /* vernier */
+  if(r.vernier){
+    const ev = core.evalVernier(r.vernier.arcsec);
+    rows += `<div class="res-row"><div class="what"><b>Acuité vernier (alignement)</b>
+      <span>${r.vernier.arcsec==null ? "Seuil non mesurable" : "Seuil ≈ "+r.vernier.arcsec+"″ d'arc (normal ≤ 60″, hyperacuité ≤ 30″)"}</span></div>
+      ${pill(ev.kind, ev.label)}</div>`;
+  }
+
+  /* reading */
+  if(r.reading){
+    flags.bigText = r.reading.cpsMm > 1.25;
+    const k = r.reading.cpsMm<=1.25 ? "ok" : r.reading.cpsMm<=2.0 ? "warn" : "alert";
+    rows += `<div class="res-row"><div class="what"><b>Vitesse de lecture (${S.distCm} cm)</b>
+      <span>Maximum ≈ ${r.reading.maxWpm} mots/min · taille critique ≈ ${r.reading.cpsMm.toLocaleString("fr-FR")} mm</span></div>
+      ${pill(k, k==="ok"?"Fluide":k==="warn"?"Ralentie en petit":"Texte agrandi requis")}</div>`;
+  }
+
+  /* blind spot */
+  if(r.blind_od || r.blind_og){
+    const parts = []; let worst = "ok";
+    ["od","og"].forEach(e=>{
+      const b = r["blind_"+e]; if(!b) return;
+      const ev = core.blindSpotEval(b.center, b.width);
+      if(ev.kind!=="ok") worst = "warn";
+      parts.push(EYES[e].name+" : "+(b.center==null ? "non observée" :
+        "centre "+b.center+"° · largeur "+b.width+"°"+(b.capped ? " (bord d'écran atteint)" : "")));
+    });
+    flags.blind = worst!=="ok";
+    rows += `<div class="res-row"><div class="what"><b>Tache aveugle</b>
+      <span>${parts.join(" · ")}${flags.blind ? " — une fixation instable pendant le test suffit à fausser la mesure" : ""}</span></div>
+      ${pill(worst, worst==="ok"?"Normale":"À refaire / vérifier")}</div>`;
+  }
+
   /* amsler */
   if(r.amsler_od || r.amsler_og){
     const amFlags = (r.amsler_od?.flags?.length||0) + (r.amsler_og?.flags?.length||0);
@@ -1039,6 +1234,8 @@ function stepResults(el){
     `Réglages Système → <b>Accessibilité → Zoom</b> → activez « Utiliser le geste de défilement avec les touches de modification » : <kbd>ctrl</kbd> + molette/deux doigts zoome où que vous soyez. Raccourci plein écran : <kbd>⌥</kbd><kbd>⌘</kbd><kbd>8</kbd>.`);
   R_(flags.myopic, "Rapprochez l'écran plutôt que d'agrandir",
     `Une tendance myopique légère voit net de près : un écran à 50–60 cm peut rester parfaitement lisible là où un agrandissement extrême fatigue. Ajustez la profondeur du bureau avant la taille du texte.`);
+  R_(flags.bigText, "Taille de texte cible : "+(r.reading ? r.reading.recoMm.toLocaleString("fr-FR") : "—")+" mm",
+    `Votre lecture ralentit sous ≈ ${r.reading ? r.reading.cpsMm.toLocaleString("fr-FR") : "—"} mm de hauteur de capitale à ${S.distCm} cm. Réglez la taille du texte (Réglages Système → Accessibilité → Affichage) pour que les majuscules fassent au moins ${r.reading ? r.reading.recoMm.toLocaleString("fr-FR") : "—"} mm à l'écran — vérifiez avec une règle.`);
   R_(flags.hyperopic||flags.presby, "Taille du texte système et des apps",
     `Réglages Système → <b>Accessibilité → Affichage → Taille du texte</b>. Dans la plupart des apps : <kbd>⌘</kbd><kbd>+</kbd>. Dans Safari : Réglages → Sites web → Zoom de page pour un zoom permanent par site.`);
   R_(flags.lowCtr, "Contraste renforcé",
@@ -1062,6 +1259,9 @@ function stepResults(el){
     <div class="card">${rows}</div>
     ${flags.amsler ? `<div class="callout"><b>Important :</b> des déformations ou zones manquantes sur la grille d'Amsler
       ne se corrigent par aucun réglage d'écran et méritent un avis ophtalmologique <b>rapide</b> (quelques jours, pas quelques mois).</div>` : ""}
+    ${flags.blind ? `<div class="callout">La mesure de la <b>tache aveugle</b> sort de la plage habituelle. C'est le plus souvent
+      une fixation mal tenue pendant le test — refaites-le tranquillement. Si le résultat se répète, mentionnez-le
+      à votre ophtalmologiste.</div>` : ""}
     ${flags.veryLow ? `<div class="callout"><b>Votre acuité de loin est nettement réduite.</b> Les réglages ci-dessous rendront le Mac utilisable,
       mais à ce niveau une correction optique reste la vraie solution — et elle est souvent simple à obtenir.</div>` : ""}
     <h3>Régler votre Mac${anyYou ? " — d'après vos résultats" : ""}</h3>
@@ -1091,6 +1291,9 @@ function stepResults(el){
     if(r.astig_od||r.astig_og) L.push("Astigmatisme : "+(flags.astig?"suspicion ("+astigTxt.join(", ")+")":"rien à signaler"));
     if(r.contrast) L.push("Contraste : log CS ≈ "+r.contrast.logCS.toFixed(1));
     if(r.near) L.push("Près (40 cm) : "+(r.near.mm==null?"aucune ligne confortable":"jusqu'à "+r.near.mm+" mm"));
+    if(r.vernier) L.push("Vernier : "+(r.vernier.arcsec==null?"non mesurable":"seuil "+r.vernier.arcsec+"″"));
+    if(r.reading) L.push("Lecture : max "+r.reading.maxWpm+" mots/min, taille critique "+r.reading.cpsMm+" mm à "+S.distCm+" cm");
+    ["od","og"].forEach(e=>{ const b=r["blind_"+e]; if(b) L.push("Tache aveugle "+e.toUpperCase()+" : "+(b.center==null?"non observée":"centre "+b.center+"°, largeur "+b.width+"°")); });
     if(r.amsler_od||r.amsler_og) L.push("Amsler : "+(flags.amsler?"anomalies signalées — consulter":"régulière"));
     if(r.color) L.push("Couleurs : "+(r.color.ctrlOK ? r.color.good+"/"+r.color.total+" rouge-vert, "+r.color.triGood+"/"+r.color.triTotal+" bleu-jaune" : "non interprétable"));
     if(r.strain) L.push("Fatigue visuelle : "+r.strain.score+"/"+r.strain.max);
@@ -1112,7 +1315,10 @@ steps = [
   duoStep("od"), duoStep("og"),
   astigStep("od"), astigStep("og"),
   { chip:"Contraste", render: stepContrast },
+  { chip:"Vernier", render: stepVernier },
   { chip:"Près", render: stepNear },
+  { chip:"Lecture", render: stepReading },
+  blindStep("od"), blindStep("og"),
   amslerStep("od"), amslerStep("og"),
   { chip:"Couleurs", render: stepColor },
   { chip:"Fatigue", render: stepStrain },
