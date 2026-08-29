@@ -69,9 +69,9 @@ button.ghost{background:transparent}
 button:focus-visible{outline:2px solid var(--duo-green); outline-offset:2px}
 button:disabled{opacity:.4; cursor:default}
 .skiplink{margin-left:auto; font-size:13.5px; color:var(--muted)}
-.dirpad{display:grid; grid-template-columns:repeat(3,64px); grid-template-rows:repeat(2,54px); gap:8px; justify-content:center; margin:18px auto 0}
-.dirpad button{font-size:22px; padding:0}
-.dirpad .u{grid-column:2; grid-row:1} .dirpad .l{grid-column:1; grid-row:2} .dirpad .d{grid-column:2; grid-row:2} .dirpad .r{grid-column:3; grid-row:2}
+.dirpad8{display:grid; grid-template-columns:repeat(3,60px); grid-template-rows:repeat(3,50px); gap:8px; justify-content:center; margin:18px auto 0}
+.dirpad8 button{font-size:20px; padding:0}
+.dirpad8 .c{visibility:hidden}
 .cantsee{display:block; margin:12px auto 0}
 .mono{font-family:var(--mono)}
 .meas{font-family:var(--mono); font-variant-numeric:tabular-nums}
@@ -116,6 +116,10 @@ kbd{font-family:var(--mono); font-size:12.5px; background:var(--soft); border:1p
 .fan line{cursor:pointer}
 .trialinfo{font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.05em; margin-top:6px}
 
+/* gamma */
+.gammabox{display:flex; max-width:440px; margin:0 auto; border-radius:12px; overflow:hidden; border:1px solid #ccc}
+.gammabox canvas{display:block}
+
 /* strain questionnaire */
 .qrow{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px dashed var(--line)}
 .qrow:last-child{border-bottom:none}
@@ -141,7 +145,7 @@ kbd{font-family:var(--mono); font-size:12.5px; background:var(--soft); border:1p
 <div class="wrap">
   <div class="masthead">
     <h1>Okulist</h1>
-    <div class="tag">Auto-dépistage visuel · v2</div>
+    <div class="tag">Auto-dépistage visuel · v3</div>
   </div>
   <div class="chips" id="chips" role="list"></div>
   <main id="stage"></main>
@@ -153,17 +157,221 @@ kbd{font-family:var(--mono); font-size:12.5px; background:var(--soft); border:1p
 </div>
 
 <script>
+/* ==CORE-BEGIN== (généré par tools/build.mjs — ne pas éditer ici) */
+/* Okulist core — logique pure, sans DOM.
+ * Ce fichier est la source de vérité : il est injecté tel quel dans index.html
+ * par tools/build.mjs (entre les marqueurs ==CORE==) et testé par test/core.test.mjs. */
+(function (root, factory) {
+  if (typeof module !== "undefined" && module.exports) module.exports = factory();
+  else root.OkulistCore = factory();
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  "use strict";
+
+  /* ---------- géométrie visuelle ---------- */
+  const DEG = Math.PI / 180;
+
+  /* Angle visuel (degrés) → pixels à l'écran, et réciproque. */
+  function degToPx(deg, distCm, pxmm) {
+    return Math.tan(deg * DEG) * distCm * 10 * pxmm;
+  }
+  function pxToDeg(px, distCm, pxmm) {
+    return Math.atan(px / pxmm / (distCm * 10)) / DEG;
+  }
+
+  /* Échelle d'acuité française en dixièmes.
+   * Anneau de Landolt : ouverture = 1/acuité minutes d'arc, anneau = 5 ouvertures. */
+  const DX_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
+  function landoltGapPx(dx, distCm, pxmm) {
+    const arcmin = 10 / dx;
+    return degToPx(arcmin / 60, distCm, pxmm);
+  }
+
+  /* ---------- escalier psychophysique ----------
+   * Descente niveau par niveau. À chaque niveau : réussite après `passNeed`
+   * bonnes réponses ; échec dès qu'il devient impossible de les atteindre
+   * en `maxTrials` essais. L'échec fige le résultat au dernier niveau réussi. */
+  function createStaircase(nLevels, opts) {
+    const o = Object.assign({ passNeed: 2, maxTrials: 4 }, opts);
+    const st = { level: 0, ok: 0, n: 0, lastPassed: null, done: false, result: null };
+    function finish(levelIndex) {
+      st.done = true;
+      st.result = levelIndex;
+    }
+    return {
+      get state() { return Object.assign({}, st); },
+      answer(correct) {
+        if (st.done) return st;
+        st.n++;
+        if (correct) st.ok++;
+        if (st.ok >= o.passNeed) {
+          st.lastPassed = st.level;
+          if (st.level >= nLevels - 1) finish(st.lastPassed);
+          else { st.level++; st.ok = 0; st.n = 0; }
+        } else if (st.n - st.ok > o.maxTrials - o.passNeed) {
+          finish(st.lastPassed);
+        }
+        return Object.assign({}, st);
+      }
+    };
+  }
+
+  /* ---------- gamma ----------
+   * L'utilisateur ajuste un gris uni jusqu'à le confondre avec une trame
+   * 1px noir / 1px blanc (luminance physique 50 %).
+   * v est la valeur 0..255 du gris apparié. */
+  function gammaFromMatch(v) {
+    if (!(v > 10 && v < 245)) return 2.2;
+    const g = Math.log(0.5) / Math.log(v / 255);
+    return Math.min(3.2, Math.max(1.4, g));
+  }
+  /* Gris (0..255) produisant un contraste de Weber c sur fond blanc,
+   * pour un écran de gamma donné. */
+  function grayForContrast(c, gamma) {
+    return Math.round(255 * Math.pow(1 - c, 1 / (gamma || 2.2)));
+  }
+  const CONTRASTS = [1, 0.5, 0.25, 0.125, 0.06, 0.03, 0.015];
+
+  /* ---------- couleur : lignes de confusion CIE ---------- */
+  function xyYtosRGB(x, y, Y) {
+    if (y <= 0) return null;
+    const X = (x * Y) / y, Z = ((1 - x - y) * Y) / y;
+    const rl = 3.2406 * X - 1.5372 * Y - 0.4986 * Z;
+    const gl = -0.9689 * X + 1.8758 * Y + 0.0415 * Z;
+    const bl = 0.0557 * X - 0.204 * Y + 1.057 * Z;
+    const enc = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+    const out = [rl, gl, bl].map((c) => Math.round(enc(c) * 255));
+    if (out.some((v) => v < 0 || v > 255 || Number.isNaN(v))) return null;
+    return out;
+  }
+
+  /* Points copunctaux (chromaticités xy que confond chaque type de dichromate). */
+  const COPUNCTAL = {
+    protan: [0.7465, 0.2535],
+    deutan: [1.4, -0.4],
+    tritan: [0.1748, 0.0]
+  };
+  /* Deux chromaticités sur la même ligne de confusion : un dichromate du type
+   * donné ne les distingue pas (à luminance égale). */
+  function confusionPair(type, base, delta) {
+    const cp = COPUNCTAL[type];
+    const dx = cp[0] - base[0], dy = cp[1] - base[1];
+    const n = Math.hypot(dx, dy);
+    const ux = dx / n, uy = dy / n;
+    return {
+      fig: [base[0] + ux * delta, base[1] + uy * delta],
+      bg: [base[0] - ux * delta, base[1] - uy * delta]
+    };
+  }
+  /* Palettes prêtes à l'emploi pour les planches (base et delta choisis
+   * pour rester dans le gamut sRGB sur la plage de luminance utilisée). */
+  const PLATE_COLORS = {
+    protan: confusionPair("protan", [0.33, 0.35], 0.042),
+    deutan: confusionPair("deutan", [0.33, 0.36], 0.05),
+    tritan: confusionPair("tritan", [0.3, 0.315], 0.038)
+  };
+  const PLATE_Y_RANGE = [0.22, 0.42];
+
+  /* ---------- acuité vernier ---------- */
+  const VERNIER_ARCSEC = [120, 80, 50, 30, 20, 12];
+  function vernierOffsetPx(arcsec, distCm, pxmm) {
+    return degToPx(arcsec / 3600, distCm, pxmm);
+  }
+
+  /* ---------- tache aveugle ---------- */
+  /* Position normale : ~15,5° en temporal, largeur ~5,5°. */
+  function blindSpotEval(centerDeg, widthDeg) {
+    if (centerDeg == null || widthDeg == null) return { kind: "warn", label: "Non mesurée" };
+    if (widthDeg > 8.5) return { kind: "warn", label: "Élargie — à faire vérifier" };
+    if (centerDeg < 11 || centerDeg > 20) return { kind: "warn", label: "Position atypique" };
+    return { kind: "ok", label: "Normale" };
+  }
+
+  /* ---------- vitesse de lecture (type MNREAD simplifié) ---------- */
+  /* samples : [{mm, wpm}] — taille de caractère (hauteur de capitale, mm)
+   * et vitesse mesurée. Renvoie vitesse max, taille critique (plus petite
+   * taille conservant ≥ 80 % de la vitesse max) et taille recommandée. */
+  function readingStats(samples) {
+    const valid = samples.filter((s) => s.wpm > 0);
+    if (!valid.length) return null;
+    const maxWpm = Math.max(...valid.map((s) => s.wpm));
+    const fast = valid.filter((s) => s.wpm >= 0.8 * maxWpm);
+    const cps = Math.min(...fast.map((s) => s.mm));
+    return { maxWpm: Math.round(maxWpm), cpsMm: cps, recoMm: +(cps * 1.3).toFixed(2) };
+  }
+
+  /* ---------- interprétations ---------- */
+  function evalAcuity(dx) {
+    if (dx >= 8) return { kind: "ok", label: "Bonne" };
+    if (dx >= 5) return { kind: "warn", label: "Modérément réduite" };
+    return { kind: "alert", label: "Réduite" };
+  }
+  function evalContrast(logCS) {
+    if (logCS >= 1.5) return { kind: "ok", label: "Bonne" };
+    if (logCS >= 1.0) return { kind: "warn", label: "Un peu basse" };
+    return { kind: "alert", label: "Basse" };
+  }
+  function evalNear(mmH) {
+    if (mmH == null) return { kind: "alert", label: "Réduite" };
+    if (mmH <= 1.0) return { kind: "ok", label: "Bonne" };
+    if (mmH <= 1.6) return { kind: "warn", label: "Un peu juste" };
+    return { kind: "alert", label: "Réduite" };
+  }
+  function evalStrain(score) {
+    if (score <= 3) return { kind: "ok", label: "Faible" };
+    if (score <= 7) return { kind: "warn", label: "Modérée" };
+    return { kind: "alert", label: "Marquée" };
+  }
+  function evalVernier(arcsec) {
+    if (arcsec == null) return { kind: "warn", label: "Non mesurée" };
+    if (arcsec <= 30) return { kind: "ok", label: "Excellente" };
+    if (arcsec <= 60) return { kind: "ok", label: "Bonne" };
+    return { kind: "warn", label: "Réduite" };
+  }
+
+  /* ---------- distance par webcam ----------
+   * Diamètre d'iris humain quasi constant : 11,7 mm.
+   * focalPx est calibrée une fois à distance connue. */
+  const IRIS_MM = 11.7;
+  function focalFromIris(irisPx, distCm) { return (irisPx * distCm * 10) / IRIS_MM; }
+  function distFromIris(irisPx, focalPx) {
+    if (!(irisPx > 0) || !(focalPx > 0)) return null;
+    return (focalPx * IRIS_MM) / irisPx / 10;
+  }
+
+  return {
+    DEG, degToPx, pxToDeg,
+    DX_LEVELS, landoltGapPx,
+    createStaircase,
+    gammaFromMatch, grayForContrast, CONTRASTS,
+    xyYtosRGB, COPUNCTAL, confusionPair, PLATE_COLORS, PLATE_Y_RANGE,
+    VERNIER_ARCSEC, vernierOffsetPx,
+    blindSpotEval, readingStats,
+    evalAcuity, evalContrast, evalNear, evalStrain, evalVernier,
+    IRIS_MM, focalFromIris, distFromIris
+  };
+});
+/* ==CORE-END== */
+</script>
+<script>
 "use strict";
+const core = OkulistCore;
 const $ = s => document.querySelector(s);
 const stage = $("#stage");
 
 /* ---------------- state ---------------- */
-const S = { pxmm: 4.0, distCm: 70, res: {} };
+const S = { pxmm: 4.0, distCm: 70, gamma: 2.2, res: {} };
 try{
   const saved = JSON.parse(localStorage.getItem("okulist-calib")||"null");
-  if(saved && saved.pxmm > 1 && saved.pxmm < 30){ S.pxmm = saved.pxmm; S.distCm = saved.distCm || 70; }
+  if(saved && saved.pxmm > 1 && saved.pxmm < 30){
+    S.pxmm = saved.pxmm; S.distCm = saved.distCm || 70;
+    if(saved.gamma) S.gamma = saved.gamma;
+  }
 }catch(e){}
 const mm = x => x * S.pxmm;
+const gapPx = dx => core.landoltGapPx(dx, S.distCm, S.pxmm);
+function saveCalib(){
+  try{ localStorage.setItem("okulist-calib", JSON.stringify({pxmm:S.pxmm, distCm:S.distCm, gamma:S.gamma})); }catch(e){}
+}
 
 /* ---------------- step engine ---------------- */
 const CHIPS = ["Calibrage","Acuité","Duochrome","Astigmatisme","Contraste","Près","Amsler","Couleurs","Fatigue","Bilan"];
@@ -197,10 +405,10 @@ function goTo(i){
 }
 const next = () => goTo(cur+1);
 const back = () => goTo(cur-1);
+const KEYDIRS = {ArrowRight:0, ArrowDown:90, ArrowLeft:180, ArrowUp:270,
+  "6":0, "3":45, "2":90, "1":135, "4":180, "7":225, "8":270, "9":315};
 document.addEventListener("keydown", e=>{
-  if(keyHandler && ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)){
-    e.preventDefault(); keyHandler(e.key);
-  }
+  if(keyHandler && e.key in KEYDIRS){ e.preventDefault(); keyHandler(KEYDIRS[e.key]); }
 });
 
 function navRow(el, opts={}){
@@ -231,30 +439,33 @@ function eyeBanner(eye){
     (sans appuyer), et gardez les deux yeux ouverts derrière la main.</div></div>`;
 }
 
-const DIRS = { right:0, down:90, left:180, up:270 };
-function landoltSVG(sizePx, dir, color="#000", bg="#fff"){
+/* 8 orientations : angle de l'ouverture, en degrés horaires depuis la droite. */
+const ANGLES8 = [0,45,90,135,180,225,270,315];
+function landoltSVG(sizePx, angle, color="#000", bg="#fff"){
   return `<svg width="${sizePx}" height="${sizePx}" viewBox="0 0 5 5" style="display:block" aria-label="anneau">
-    <g transform="rotate(${DIRS[dir]} 2.5 2.5)">
+    <g transform="rotate(${angle} 2.5 2.5)">
       <circle cx="2.5" cy="2.5" r="2" fill="none" stroke="${color}" stroke-width="1"/>
       <rect x="3.9" y="2" width="1.2" height="1" fill="${bg}"/>
     </g></svg>`;
 }
-function randDir(prev){
-  const keys = Object.keys(DIRS).filter(k=>k!==prev);
-  return keys[Math.floor(Math.random()*keys.length)];
+function randAngle(prev){
+  const c = ANGLES8.filter(a=>a!==prev);
+  return c[Math.floor(Math.random()*c.length)];
 }
-function dirPad(onAnswer, cantSeeLabel){
+function dirPad8(onAnswer, cantSeeLabel){
   const wrapEl = document.createElement("div");
-  const pad = document.createElement("div"); pad.className="dirpad";
-  [["u","↑","up"],["l","←","left"],["d","↓","down"],["r","→","right"]].forEach(([cls,sym,dir])=>{
-    const b=document.createElement("button"); b.className=cls; b.textContent=sym;
-    b.setAttribute("aria-label",dir); b.onclick=()=>onAnswer(dir); pad.appendChild(b);
+  const pad = document.createElement("div"); pad.className="dirpad8";
+  [["↖",225],["↑",270],["↗",315],["←",180],["·",null],["→",0],["↙",135],["↓",90],["↘",45]].forEach(([sym,a])=>{
+    const b=document.createElement("button");
+    if(a===null){ b.className="c"; b.tabIndex=-1; b.setAttribute("aria-hidden","true"); }
+    else{ b.textContent=sym; b.setAttribute("aria-label","ouverture à "+a+"°"); b.onclick=()=>onAnswer(a); }
+    pad.appendChild(b);
   });
   wrapEl.appendChild(pad);
   const c=document.createElement("button"); c.className="ghost cantsee";
   c.textContent = cantSeeLabel || "Je ne distingue pas l'ouverture";
-  c.onclick=()=>onAnswer(null); wrapEl.appendChild(c);
-  keyHandler = k => onAnswer({ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right"}[k]);
+  c.onclick=()=>onAnswer(-1); wrapEl.appendChild(c);
+  keyHandler = a => onAnswer(a);
   return wrapEl;
 }
 
@@ -264,10 +475,9 @@ function stepIntro(el){
   try{ lastBilan = JSON.parse(localStorage.getItem("okulist-last")||"null"); }catch(e){}
   el.innerHTML = `
     <h2>Faites le point sur votre vue, depuis votre écran</h2>
-    <p class="lede">Neuf tests — environ 10 minutes — pour repérer une baisse d'acuité, une tendance
-    myopique ou hypermétropique, un astigmatisme, une baisse de contraste, une presbytie, une anomalie
-    maculaire, une déficience des couleurs ou une fatigue visuelle numérique. À la fin, Okulist vous
-    propose les réglages macOS les plus utiles selon vos résultats. Chaque test peut être passé.</p>
+    <p class="lede">Une batterie de tests calibrés sur votre écran — acuité, duochrome, astigmatisme,
+    contraste, presbytie, macula, couleurs, fatigue visuelle. À la fin, Okulist vous propose les
+    réglages macOS les plus utiles selon vos résultats. Chaque test peut être passé.</p>
     <div class="callout"><b>Soyons honnêtes :</b> aucun filtre logiciel ne peut corriger optiquement une myopie,
     une hypermétropie ou un astigmatisme — seuls des verres ou des lentilles le font. Un écran bien réglé peut en
     revanche rester <i>lisible et confortable</i> sans lunettes dans beaucoup de cas légers. C'est l'objectif ici.</div>
@@ -307,6 +517,7 @@ function stepCalib(el){
       </div>
       <div class="note">Largeur affichée : <span class="meas" id="pxmmval"></span></div>
     </div>
+    <div id="mobilewarn"></div>
     <div class="card">
       <h3 style="margin-top:0">Distance de l'écran</h3>
       <p style="margin-top:0">À quelle distance vos yeux sont-ils de l'écran pendant les tests de loin ?
@@ -321,6 +532,11 @@ function stepCalib(el){
     box.style.width = w+"px"; box.style.height = (w*53.98/CARD_MM)+"px";
     S.pxmm = w/CARD_MM;
     val.textContent = w+" px ≈ "+S.pxmm.toFixed(2)+" px/mm";
+    const scrMm = window.screen.width/S.pxmm;
+    $("#mobilewarn").innerHTML = scrMm < 180 ?
+      `<div class="callout">Votre écran semble faire ~${Math.round(scrMm/10)} cm de large : les tests
+      « de loin » sont conçus pour un ordinateur. Sur un petit écran, les résultats d'acuité,
+      de duochrome et d'astigmatisme ne seront pas fiables.</div>` : "";
   }
   range.value = Math.round(S.pxmm*CARD_MM);
   setW(+range.value);
@@ -336,22 +552,55 @@ function stepCalib(el){
   distIn.oninput = ()=>[...pres.children].forEach(x=>x.classList.remove("sel"));
   navRow(el, {onNext(){
     S.distCm = Math.max(30, Math.min(200, +distIn.value || 70));
-    try{ localStorage.setItem("okulist-calib", JSON.stringify({pxmm:S.pxmm, distCm:S.distCm})); }catch(e){}
+    saveCalib();
+    next();
+  }});
+}
+
+/* ---------------- step: gamma ---------------- */
+function stepGamma(el){
+  el.innerHTML = `
+    <h2>Calibrage du gamma</h2>
+    <p class="lede">Le test de contraste dépend de la courbe de luminance de votre écran.
+    Plissez fortement les yeux (ou reculez d'un grand pas) : les deux moitiés ci-dessous doivent
+    se confondre en un même gris. Ajustez le curseur jusqu'à ce que la frontière disparaisse.</p>
+    <div class="chart">
+      <div class="gammabox"><canvas id="stripes" width="220" height="160" style="width:220px;height:160px"></canvas><canvas id="flat" width="220" height="160" style="width:220px;height:160px"></canvas></div>
+      <div style="max-width:420px; margin:18px auto 0">
+        <input type="range" id="gslider" min="110" max="235" step="1" aria-label="gris de comparaison">
+      </div>
+      <div class="note">gamma estimé : <span class="meas" id="gval"></span></div>
+    </div>`;
+  const dpr = window.devicePixelRatio||1;
+  const st = $("#stripes"), fl = $("#flat");
+  [st,fl].forEach(c=>{ c.width = 220*dpr; c.height = 160*dpr; });
+  const sc = st.getContext("2d");
+  for(let y=0; y<st.height; y++){
+    sc.fillStyle = (y%2===0) ? "#000" : "#fff";
+    sc.fillRect(0, y, st.width, 1);
+  }
+  const fc = fl.getContext("2d"), gval = $("#gval"), slider = $("#gslider");
+  function paint(v){
+    fc.fillStyle = `rgb(${v},${v},${v})`;
+    fc.fillRect(0,0,fl.width,fl.height);
+    gval.textContent = core.gammaFromMatch(v).toFixed(2)+" (gris "+v+")";
+  }
+  slider.value = Math.round(255*Math.pow(0.5, 1/S.gamma));
+  paint(+slider.value);
+  slider.oninput = ()=>paint(+slider.value);
+  navRow(el, {skippable:true, onSkip(){ S.gamma = 2.2; saveCalib(); }, onNext(){
+    S.gamma = core.gammaFromMatch(+slider.value);
+    saveCalib();
     next();
   }});
 }
 
 /* ---------------- step: acuity (per eye) ---------------- */
-const DX_LEVELS = [1,2,3,4,5,6,7,8,9,10,12];
-function gapPx(dx){
-  const arcmin = 10/dx;
-  const rad = arcmin/60*Math.PI/180;
-  return S.distCm*10*rad*S.pxmm;
-}
 function acuityStep(eye){ return { chip:"Acuité", render(el){
   el.innerHTML = `<h2>Acuité de loin — ${EYES[eye].name}</h2>
-    <p class="lede">Un anneau ouvert s'affiche, de plus en plus petit. Indiquez de quel côté se trouve
-    l'<b>ouverture</b> — boutons ou flèches du clavier. Exemple : ${landoltSVG(28,"up").replace('style="display:block"','style="display:inline-block; vertical-align:middle; background:#fff; border-radius:4px; padding:2px"')}
+    <p class="lede">Un anneau ouvert s'affiche, de plus en plus petit. Indiquez la direction de
+    l'<b>ouverture</b> parmi huit — boutons, flèches du clavier ou chiffres 1–9 (pavé numérique).
+    Exemple : ${landoltSVG(28,270).replace('style="display:block"','style="display:inline-block; vertical-align:middle; background:#fff; border-radius:4px; padding:2px"')}
     → l'ouverture est en <b>haut</b>. Restez bien à ${S.distCm} cm.</p>
     ${eyeBanner(eye)}
     <div class="chart"><div id="opto" style="min-height:120px; display:flex; align-items:center; justify-content:center"></div>
@@ -359,40 +608,27 @@ function acuityStep(eye){ return { chip:"Acuité", render(el){
     <div class="note">Fond blanc volontaire : le test se fait à pleine luminosité.</div></div>
     <div id="answer"></div>`;
   const opto = $("#opto"), tinfo = $("#tinfo");
-  const levels = DX_LEVELS.filter(dx => gapPx(dx)*5 >= 6);
-  const screenCapped = levels.length < DX_LEVELS.length;
-  let li = 0, mode = "fast", confirmOK = 0, confirmN = 0, lastPassed = null, dir = randDir();
+  const levels = core.DX_LEVELS.filter(dx => gapPx(dx)*5 >= 6);
+  const screenCapped = levels.length < core.DX_LEVELS.length;
+  const stair = core.createStaircase(levels.length, {passNeed:2, maxTrials:4});
+  let angle = randAngle();
 
   function show(){
-    const dx = levels[li];
-    opto.innerHTML = landoltSVG(Math.round(gapPx(dx)*5), dir);
+    const dx = levels[stair.state.level];
+    opto.innerHTML = landoltSVG(Math.round(gapPx(dx)*5), angle);
     tinfo.textContent = "niveau "+dx+"/10";
   }
-  function finish(dx){
-    S.res["acuity_"+eye] = { dx, capped: screenCapped && dx===levels[levels.length-1] };
-    next();
-  }
-  function answer(d){
-    const good = d === dir;
-    dir = randDir(dir);
-    if(mode==="fast"){
-      if(good){
-        lastPassed = levels[li];
-        if(li === levels.length-1) return finish(lastPassed);
-        li++; show();
-      }else{ mode="confirm"; confirmOK=0; confirmN=1; show(); }
-    }else{
-      confirmN++; if(good) confirmOK++;
-      if(confirmOK>=3){
-        lastPassed = levels[li]; mode="fast";
-        if(li === levels.length-1) return finish(lastPassed);
-        li++; show();
-      }else if(confirmN>=5 || confirmN-confirmOK>=3){
-        return finish(lastPassed ?? 0);
-      }else show();
+  function answer(a){
+    const st = stair.answer(a === angle);
+    angle = randAngle(angle);
+    if(st.done){
+      const dx = st.result==null ? 0 : levels[st.result];
+      S.res["acuity_"+eye] = { dx, capped: screenCapped && dx===levels[levels.length-1] };
+      return next();
     }
+    show();
   }
-  $("#answer").appendChild(dirPad(answer));
+  $("#answer").appendChild(dirPad8(answer));
   show();
   navRow(el, {noNext:true, skippable:true});
 }};}
@@ -402,8 +638,8 @@ function duoStep(eye){ return { chip:"Duochrome", render(el){
   const measured = S.res["acuity_"+eye]?.dx;
   const dx = measured && measured>=2 ? Math.min(measured,8) : 5;
   const size = Math.max(18, Math.round(gapPx(dx)*5*1.4));
-  const dirs = [randDir()]; dirs.push(randDir(dirs[0])); dirs.push(randDir(dirs[1]));
-  const rings = bg => dirs.map(d=>landoltSVG(size, d, "#000", bg)).join("");
+  const angles = [randAngle()]; angles.push(randAngle(angles[0])); angles.push(randAngle(angles[1]));
+  const rings = bg => angles.map(a=>landoltSVG(size, a, "#000", bg)).join("");
   el.innerHTML = `<h2>Test duochrome — ${EYES[eye].name}</h2>
     <p class="lede">C'est le test des deux fonds rouge et vert que votre ophtalmologiste utilise en fin
     de réfraction. À ${S.distCm} cm, comparez les anneaux noirs : sont-ils plus <b>nets et contrastés</b>
@@ -456,41 +692,53 @@ function astigStep(eye){ return { chip:"Astigmatisme", render(el){
 }};}
 
 /* ---------------- step: contrast ---------------- */
-const CONTRASTS = [1, .5, .25, .125, .06, .03, .015];
 function stepContrast(el){
   el.innerHTML = `<h2>Sensibilité au contraste</h2>
     <p class="lede">Les deux yeux ouverts, à ${S.distCm} cm. Même principe que l'acuité,
-    mais l'anneau devient de plus en plus pâle. Indiquez le côté de l'ouverture.</p>
+    mais l'anneau devient de plus en plus pâle. Indiquez la direction de l'ouverture.</p>
     <div class="chart"><div id="opto" style="min-height:120px; display:flex; align-items:center; justify-content:center"></div>
-    <div class="trialinfo" id="tinfo" aria-live="polite"></div></div>
+    <div class="trialinfo" id="tinfo" aria-live="polite"></div>
+    <div class="note">niveaux corrigés pour le gamma mesuré (${S.gamma.toFixed(2)})</div></div>
     <div id="answer"></div>`;
   const size = Math.max(40, Math.round(gapPx(2.5)*5));
-  let ci = 0, misses = 0, lastPassed = null, dir = randDir();
+  const stair = core.createStaircase(core.CONTRASTS.length, {passNeed:2, maxTrials:4});
+  let angle = randAngle();
   const opto=$("#opto"), tinfo=$("#tinfo");
-  function gray(c){ const v = Math.round(255*Math.pow(1-c, 1/2.2)); return `rgb(${v},${v},${v})`; }
   function show(){
-    opto.innerHTML = landoltSVG(size, dir, gray(CONTRASTS[ci]));
-    tinfo.textContent = "contraste "+(CONTRASTS[ci]*100).toLocaleString("fr-FR")+" %";
+    const c = core.CONTRASTS[stair.state.level];
+    const v = core.grayForContrast(c, S.gamma);
+    opto.innerHTML = landoltSVG(size, angle, `rgb(${v},${v},${v})`);
+    tinfo.textContent = "contraste "+(c*100).toLocaleString("fr-FR")+" %";
   }
-  function finish(){
-    S.res.contrast = { logCS: lastPassed==null ? 0 : +(-Math.log10(lastPassed)).toFixed(2), floor: lastPassed };
-    next();
-  }
-  function answer(d){
-    if(d===dir){
-      lastPassed = CONTRASTS[ci]; misses = 0;
-      if(ci===CONTRASTS.length-1) return finish();
-      ci++; dir=randDir(dir); show();
-    }else{
-      misses++; dir=randDir(dir);
-      if(misses>=2) return finish();
-      show();
+  function answer(a){
+    const st = stair.answer(a === angle);
+    angle = randAngle(angle);
+    if(st.done){
+      const floor = st.result==null ? null : core.CONTRASTS[st.result];
+      S.res.contrast = { logCS: floor==null ? 0 : +(-Math.log10(floor)).toFixed(2), floor };
+      return next();
     }
+    show();
   }
-  $("#answer").appendChild(dirPad(answer));
+  $("#answer").appendChild(dirPad8(answer));
   show();
   navRow(el, {noNext:true, skippable:true});
 }
+
+/* ---------------- typographie calibrée (près + lecture) ---------------- */
+let _capRatio = null;
+function capRatio(){
+  if(_capRatio) return _capRatio;
+  try{
+    const c = document.createElement("canvas").getContext("2d");
+    c.font = '400 100px "Public Sans", "Helvetica Neue", Arial, sans-serif';
+    const m = c.measureText("H");
+    const r = m.actualBoundingBoxAscent/100;
+    _capRatio = (r>0.5 && r<0.9) ? r : 0.72;
+  }catch(e){ _capRatio = 0.72; }
+  return _capRatio;
+}
+function fontPxForCapMm(mmH){ return mm(mmH)/capRatio(); }
 
 /* ---------------- step: near vision ---------------- */
 const NEAR_SIZES = [2.6, 2.0, 1.6, 1.25, 1.0, 0.8];
@@ -508,14 +756,14 @@ function stepNear(el){
     les deux yeux ouverts. Cliquez sur la <b>plus petite ligne</b> que vous lisez sans effort
     et sans plisser les yeux.</p>
     <div class="chart" style="text-align:center"><div id="lines"></div>
-      <div class="note">À 40 cm de l'écran — ni plus près, ni plus loin.</div></div>
+      <div class="note">À 40 cm de l'écran — tailles réelles, hauteur de capitale mesurée.</div></div>
     <div class="btnrow" style="justify-content:center">
       <button class="ghost" id="none">Aucune ligne n'est confortable</button>
     </div>`;
   const lines = $("#lines");
   NEAR_SIZES.forEach((mmH,i)=>{
     const d=document.createElement("div"); d.className="nearline";
-    d.style.fontSize = (mm(mmH)/0.72)+"px"; d.style.lineHeight = "1.3";
+    d.style.fontSize = fontPxForCapMm(mmH)+"px"; d.style.lineHeight = "1.3";
     d.textContent = NEAR_TEXTS[i];
     d.onclick=()=>{ S.res.near = { mm: mmH }; next(); };
     lines.appendChild(d);
@@ -562,14 +810,26 @@ function amslerStep(eye){ return { chip:"Amsler", render(el){
   }});
 }};}
 
-/* ---------------- step: color plates ---------------- */
+/* ---------------- step: color plates (lignes de confusion CIE) ---------------- */
 const PLATES = [
-  { d:"8", mode:"ctrl", opts:["3","6","8","9"] },
-  { d:"3", mode:"rg",   opts:["3","5","8","9"] },
-  { d:"5", mode:"rg",   opts:["2","3","5","6"] },
-  { d:"7", mode:"rg",   opts:["1","4","7","9"] },
-  { d:"2", mode:"rg",   opts:["2","3","5","7"] }
+  { d:"8", mode:"ctrl",   opts:["3","6","8","9"] },
+  { d:"3", mode:"deutan", opts:["3","5","8","9"] },
+  { d:"7", mode:"protan", opts:["1","4","7","9"] },
+  { d:"5", mode:"deutan", opts:["2","3","5","6"] },
+  { d:"2", mode:"protan", opts:["2","3","5","7"] },
+  { d:"6", mode:"tritan", opts:["5","6","8","9"] }
 ];
+function plateDotColor(mode, isFigure){
+  const j=(a,b)=>a+Math.random()*(b-a);
+  if(mode==="ctrl"){
+    return isFigure ? `hsl(${j(16,28)} 72% ${j(38,50)}%)` : `hsl(${j(200,216)} 16% ${j(58,72)}%)`;
+  }
+  const pair = core.PLATE_COLORS[mode];
+  const xy = isFigure ? pair.fig : pair.bg;
+  const Y = j(core.PLATE_Y_RANGE[0], core.PLATE_Y_RANGE[1]);
+  const rgb = core.xyYtosRGB(xy[0], xy[1], Y) || [128,128,128];
+  return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+}
 function drawPlate(canvas, digit, mode){
   const size = canvas.clientWidth, dpr = window.devicePixelRatio||1;
   canvas.width = size*dpr; canvas.height = size*dpr;
@@ -583,28 +843,21 @@ function drawPlate(canvas, digit, mode){
   mc.fillText(digit, size/2, size/2 + size*0.03);
   const data = mc.getImageData(0,0,size,size).data;
   const inDigit=(x,y)=> data[((y|0)*size+(x|0))*4] > 128;
-  const j=(a,b)=>a+Math.random()*(b-a);
   const cx=size/2, cy=size/2, R=size/2-2, cell=size/27;
   for(let gy=cell/2; gy<size; gy+=cell) for(let gx=cell/2; gx<size; gx+=cell){
     const x=gx+(Math.random()-.5)*cell*.7, y=gy+(Math.random()-.5)*cell*.7;
     if(Math.hypot(x-cx,y-cy) > R-cell/2) continue;
     const r=cell*(0.27+Math.random()*0.2);
-    const fig=inDigit(x,y);
-    let col;
-    if(mode==="ctrl"){
-      col = fig ? `hsl(${j(16,28)} 72% ${j(38,50)}%)` : `hsl(${j(200,216)} 16% ${j(58,72)}%)`;
-    }else{
-      const L=j(46,62);
-      col = fig ? `hsl(${j(6,26)} ${j(46,60)}% ${L}%)` : `hsl(${j(68,96)} ${j(28,42)}% ${L}%)`;
-    }
-    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+    ctx.fillStyle=plateDotColor(mode, inDigit(x,y));
+    ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
   }
 }
 function stepColor(el){
   el.innerHTML = `<h2>Vision des couleurs</h2>
-    <p class="lede">Les deux yeux ouverts. Un chiffre se cache dans chaque disque de points colorés.
-    Répondez rapidement, sans forcer. <span class="mono" style="font-size:12px">Test indicatif —
-    la fidélité des couleurs dépend de votre écran.</span></p>
+    <p class="lede">Les deux yeux ouverts. Un chiffre se cache dans chaque disque de points colorés —
+    les teintes sont choisies sur les <b>lignes de confusion CIE</b> des trois types de déficience
+    (protan, deutan, tritan). Répondez rapidement, sans forcer.
+    <span class="mono" style="font-size:12px">Test indicatif — la fidélité dépend de votre écran.</span></p>
     <div class="chart"><canvas id="plate" style="width:min(70vw,300px); aspect-ratio:1"></canvas>
     <div class="trialinfo" id="pinfo" aria-live="polite"></div></div>
     <div class="optgrid" id="opts"></div>`;
@@ -624,12 +877,15 @@ function stepColor(el){
     n.onclick=()=>answer(null); opts.appendChild(n);
   }
   function answer(v){
-    answers.push({ok: v===PLATES[pi].d, ctrl: PLATES[pi].mode==="ctrl"});
+    answers.push({ok: v===PLATES[pi].d, mode: PLATES[pi].mode});
     pi++;
     if(pi>=PLATES.length){
-      const ctrlOK = answers.filter(a=>a.ctrl).every(a=>a.ok);
-      const rg = answers.filter(a=>!a.ctrl);
-      S.res.color = { ctrlOK, good: rg.filter(a=>a.ok).length, total: rg.length };
+      const ctrlOK = answers.filter(a=>a.mode==="ctrl").every(a=>a.ok);
+      const rg = answers.filter(a=>a.mode==="deutan"||a.mode==="protan");
+      const tri = answers.filter(a=>a.mode==="tritan");
+      S.res.color = { ctrlOK,
+        good: rg.filter(a=>a.ok).length, total: rg.length,
+        triGood: tri.filter(a=>a.ok).length, triTotal: tri.length };
       next();
     }else show();
   }
@@ -679,15 +935,10 @@ function stepStrain(el){
 
 /* ---------------- results ---------------- */
 function pill(kind, txt){ return `<span class="pill ${kind}">${txt}</span>`; }
-function evalAcuity(dx){
-  if(dx>=8) return ["ok","Bonne"];
-  if(dx>=5) return ["warn","Modérément réduite"];
-  return ["alert","Réduite"];
-}
 function stepResults(el){
   const r = S.res;
   const flags = { lowAcu:false, veryLow:false, astig:false, lowCtr:false, presby:false,
-                  amsler:false, color:false, myopic:false, hyperopic:false, strain:false };
+                  amsler:false, color:false, tritan:false, myopic:false, hyperopic:false, strain:false };
   let rows = "";
 
   /* acuity */
@@ -695,13 +946,13 @@ function stepResults(el){
   if(od!=null || og!=null){
     const present = [od,og].filter(v=>v!=null);
     const worst = Math.min(...present);
-    const [k,lab] = evalAcuity(worst);
+    const ev = core.evalAcuity(worst);
     flags.lowAcu = worst<8; flags.veryLow = worst<5;
     const diff = (od!=null && og!=null) ? Math.abs(od-og) : 0;
     if(diff>=3) flags.lowAcu = true;
     rows += `<div class="res-row"><div class="what"><b>Acuité de loin</b>
       <span>${od!=null?"Œil droit "+od+"/10":""}${od!=null&&og!=null?" · ":""}${og!=null?"œil gauche "+og+"/10":""}${(r.acuity_od?.capped||r.acuity_og?.capped)?" · mesure limitée par la finesse de l'écran à cette distance":""}${diff>=3?" · <b>écart marqué entre les deux yeux</b>":""}</span></div>
-      ${pill(k,lab)}</div>`;
+      ${pill(ev.kind,ev.label)}</div>`;
   }
 
   /* duochrome */
@@ -731,22 +982,21 @@ function stepResults(el){
 
   /* contrast */
   if(r.contrast){
-    const cs = r.contrast.logCS;
-    const k = cs>=1.5 ? "ok" : cs>=1.0 ? "warn" : "alert";
-    flags.lowCtr = cs<1.5;
+    const ev = core.evalContrast(r.contrast.logCS);
+    flags.lowCtr = r.contrast.logCS<1.5;
     rows += `<div class="res-row"><div class="what"><b>Sensibilité au contraste</b>
-      <span>Plus faible contraste perçu : ${r.contrast.floor ? (r.contrast.floor*100).toLocaleString("fr-FR")+" %" : "—"} (log CS ≈ ${cs.toFixed(1)})</span></div>
-      ${pill(k, k==="ok"?"Bonne":k==="warn"?"Un peu basse":"Basse")}</div>`;
+      <span>Plus faible contraste perçu : ${r.contrast.floor ? (r.contrast.floor*100).toLocaleString("fr-FR")+" %" : "—"} (log CS ≈ ${r.contrast.logCS.toFixed(1)}, gamma ${S.gamma.toFixed(2)})</span></div>
+      ${pill(ev.kind, ev.label)}</div>`;
   }
 
   /* near */
   if(r.near){
     const n = r.near.mm;
-    const k = n==null ? "alert" : n<=1.0 ? "ok" : n<=1.6 ? "warn" : "alert";
+    const ev = core.evalNear(n);
     flags.presby = n==null || n>1.0;
     rows += `<div class="res-row"><div class="what"><b>Vision de près (40 cm)</b>
       <span>${n==null ? "Aucune ligne lue confortablement" : "Plus petite ligne confortable : hauteur ≈ "+n.toLocaleString("fr-FR")+" mm"}</span></div>
-      ${pill(k, k==="ok"?"Bonne":k==="warn"?"Un peu juste":"Réduite")}</div>`;
+      ${pill(ev.kind, ev.label)}</div>`;
   }
 
   /* amsler */
@@ -762,20 +1012,20 @@ function stepResults(el){
   if(r.color){
     const c = r.color;
     flags.color = c.ctrlOK && c.good < c.total-1;
+    flags.tritan = c.ctrlOK && c.triTotal>0 && c.triGood===0;
     const txt = !c.ctrlOK ? "Planche témoin ratée — test non interprétable sur cet écran"
-      : c.good+" / "+c.total+" planches rouge-vert reconnues";
+      : c.good+" / "+c.total+" planches rouge-vert"+(c.triTotal?", "+c.triGood+" / "+c.triTotal+" planche bleu-jaune":"");
     rows += `<div class="res-row"><div class="what"><b>Vision des couleurs</b><span>${txt}</span></div>
-      ${!c.ctrlOK ? pill("warn","Non interprétable") : flags.color ? pill("warn","Déficience possible") : pill("ok","Rien à signaler")}</div>`;
+      ${!c.ctrlOK ? pill("warn","Non interprétable") : (flags.color||flags.tritan) ? pill("warn","Déficience possible") : pill("ok","Rien à signaler")}</div>`;
   }
 
   /* strain */
   if(r.strain){
-    const sc = r.strain.score;
-    const k = sc<=3 ? "ok" : sc<=7 ? "warn" : "alert";
-    flags.strain = sc>3;
+    const ev = core.evalStrain(r.strain.score);
+    flags.strain = r.strain.score>3;
     rows += `<div class="res-row"><div class="what"><b>Fatigue visuelle numérique</b>
-      <span>Score ${sc} / ${r.strain.max}</span></div>
-      ${pill(k, k==="ok"?"Faible":k==="warn"?"Modérée":"Marquée")}</div>`;
+      <span>Score ${r.strain.score} / ${r.strain.max}</span></div>
+      ${pill(ev.kind, ev.label)}</div>`;
   }
 
   if(!rows) rows = `<p style="margin:0">Tous les tests ont été passés — rien à afficher. Refaites le parcours pour obtenir un bilan.</p>`;
@@ -795,8 +1045,8 @@ function stepResults(el){
     `Réglages Système → <b>Accessibilité → Affichage</b> → activez « Augmenter le contraste » et « Réduire la transparence ». Les bords des fenêtres et le texte gagnent nettement en lisibilité.`);
   R_(flags.lowAcu, "Pointeur plus visible",
     `Réglages Système → <b>Accessibilité → Affichage → Pointeur</b> → augmentez la taille et ajoutez un contour de couleur. « Agiter la souris pour la localiser » aide aussi.`);
-  R_(flags.color, "Filtres de couleur",
-    `Réglages Système → <b>Accessibilité → Affichage → Filtres de couleur</b> → essayez « Deutéranopie » puis « Protanopie » et gardez celui qui distingue le mieux vos écrans réels ; réglez l'intensité au minimum efficace.`);
+  R_(flags.color||flags.tritan, "Filtres de couleur",
+    `Réglages Système → <b>Accessibilité → Affichage → Filtres de couleur</b> → essayez ${flags.tritan ? "« Tritanopie »" : "« Deutéranopie » puis « Protanopie »"} et gardez celui qui distingue le mieux vos écrans réels ; réglez l'intensité au minimum efficace.`);
   R_(flags.strain, "Pauses et clignement",
     `Règle 20-20-20 : toutes les 20 minutes, 20 secondes de regard à 6 m. Devant un écran on cligne 3× moins — forcez quelques clignements complets par minute ; en cas de sécheresse persistante, des larmes artificielles sans conservateur (pharmacie) soulagent bien.`);
   R_(flags.strain, "Ambiance lumineuse",
@@ -824,6 +1074,7 @@ function stepResults(el){
     c'est une limite optique, pas logicielle. La combinaison qui s'en approche le plus :
     <b>résolution « Texte plus grand » + zoom ctrl-molette + contraste renforcé</b>. Si malgré cela l'écran reste
     inconfortable sans lunettes, c'est le signal qu'un équipement (même de simples lunettes « écran » à votre correction) est le bon outil.</div>
+    <div id="history"></div>
     <div class="btnrow">
       <button class="primary" id="copy">Copier le récapitulatif</button>
       <button id="printres">Imprimer</button>
@@ -834,14 +1085,14 @@ function stepResults(el){
   $("#printres").onclick=()=>window.print();
   $("#copy").onclick=async ()=>{
     const L = ["Okulist — auto-dépistage du "+new Date().toLocaleDateString("fr-FR")+" (indicatif, non médical)",
-      "Distance de test : "+S.distCm+" cm"];
+      "Distance de test : "+S.distCm+" cm · gamma écran "+S.gamma.toFixed(2)];
     if(od!=null||og!=null) L.push("Acuité de loin : "+(od!=null?"OD "+od+"/10":"OD —")+", "+(og!=null?"OG "+og+"/10":"OG —"));
     if(duos.length) L.push("Duochrome : "+["od","og"].map(e=>r["duo_"+e]?(e.toUpperCase()+" "+({red:"rouge",green:"vert",eq:"égal"})[r["duo_"+e]]):null).filter(Boolean).join(", "));
     if(r.astig_od||r.astig_og) L.push("Astigmatisme : "+(flags.astig?"suspicion ("+astigTxt.join(", ")+")":"rien à signaler"));
     if(r.contrast) L.push("Contraste : log CS ≈ "+r.contrast.logCS.toFixed(1));
     if(r.near) L.push("Près (40 cm) : "+(r.near.mm==null?"aucune ligne confortable":"jusqu'à "+r.near.mm+" mm"));
     if(r.amsler_od||r.amsler_og) L.push("Amsler : "+(flags.amsler?"anomalies signalées — consulter":"régulière"));
-    if(r.color) L.push("Couleurs : "+(r.color.ctrlOK ? r.color.good+"/"+r.color.total+" planches" : "non interprétable"));
+    if(r.color) L.push("Couleurs : "+(r.color.ctrlOK ? r.color.good+"/"+r.color.total+" rouge-vert, "+r.color.triGood+"/"+r.color.triTotal+" bleu-jaune" : "non interprétable"));
     if(r.strain) L.push("Fatigue visuelle : "+r.strain.score+"/"+r.strain.max);
     try{
       await navigator.clipboard.writeText(L.join("\n"));
@@ -856,6 +1107,7 @@ function stepResults(el){
 steps = [
   { chip:"Calibrage", render: stepIntro },
   { chip:"Calibrage", render: stepCalib },
+  { chip:"Calibrage", render: stepGamma },
   acuityStep("od"), acuityStep("og"),
   duoStep("od"), duoStep("og"),
   astigStep("od"), astigStep("og"),
@@ -867,4 +1119,6 @@ steps = [
   { chip:"Bilan", render: stepResults }
 ];
 goTo(0);
+/* hook de test e2e */
+window.__okulist = { S, goTo, steps };
 </script>
