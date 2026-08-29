@@ -1,0 +1,870 @@
+<title>Okulist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Public+Sans:wght@400;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap">
+<style>
+:root{
+  --paper:#FAFBF9; --ink:#1C2321; --muted:#5C6B66; --line:#DCE3DF;
+  --card:#FFFFFF; --soft:#F0F4F1; --hover:#E8EEE9;
+  --duo-red:#D6453D; --duo-green:#169B62;
+  --ok:#1D8A5B; --ok-bg:#E3F3EB; --warn:#B37A16; --warn-bg:#F8EFD9; --alert:#C2372F; --alert-bg:#FAE5E2;
+  --btn:#1C2321; --btn-ink:#FAFBF9;
+  --display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
+  --body:"Public Sans","Helvetica Neue",system-ui,sans-serif;
+  --mono:"Spline Sans Mono","SF Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#141917; --ink:#E9EFEB; --muted:#94A49D; --line:#2B352F;
+    --card:#1C2320; --soft:#222B26; --hover:#2A342E;
+    --duo-red:#E96A61; --duo-green:#37B27F;
+    --ok:#4CC392; --ok-bg:#173328; --warn:#DFAE4F; --warn-bg:#33290F; --alert:#EE7B71; --alert-bg:#3A1D1A;
+    --btn:#E9EFEB; --btn-ink:#141917;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#141917; --ink:#E9EFEB; --muted:#94A49D; --line:#2B352F;
+  --card:#1C2320; --soft:#222B26; --hover:#2A342E;
+  --duo-red:#E96A61; --duo-green:#37B27F;
+  --ok:#4CC392; --ok-bg:#173328; --warn:#DFAE4F; --warn-bg:#33290F; --alert:#EE7B71; --alert-bg:#3A1D1A;
+  --btn:#E9EFEB; --btn-ink:#141917;
+}
+*{box-sizing:border-box}
+body{background:var(--paper); color:var(--ink); font-family:var(--body); font-size:16px; line-height:1.55; margin:0; -webkit-font-smoothing:antialiased}
+.wrap{max-width:760px; margin:0 auto; padding:0 20px 96px}
+a{color:inherit}
+
+/* ---- hero duochrome ---- */
+.hero{display:flex; border-bottom:1px solid var(--line)}
+.hero>div{flex:1; padding:34px 20px 26px; text-align:center; color:#0B0F0D}
+.hero .r{background:#E0524A} .hero .g{background:#1FA76C}
+.hero .opto{font-family:var(--display); font-weight:800; font-size:clamp(34px,7vw,58px); letter-spacing:.12em; line-height:1}
+.hero .sub{font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase; margin-top:10px; opacity:.75}
+.masthead{display:flex; align-items:baseline; justify-content:space-between; padding:22px 0 6px; flex-wrap:wrap; gap:4px 16px}
+.masthead h1{font-family:var(--display); font-weight:800; font-size:clamp(30px,5vw,42px); margin:0; letter-spacing:-.01em}
+.masthead .tag{font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase}
+
+/* ---- progress ---- */
+.chips{display:flex; flex-wrap:wrap; gap:6px; padding:14px 0 22px; border-bottom:1px solid var(--line); margin-bottom:26px}
+.chip{font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; padding:4px 10px; border-radius:999px; border:1px solid var(--line); color:var(--muted); background:transparent}
+.chip.done{border-color:var(--duo-green); color:var(--duo-green); cursor:pointer}
+.chip.done:hover{background:var(--soft)}
+.chip.now{background:var(--ink); border-color:var(--ink); color:var(--paper)}
+
+/* ---- generic ---- */
+h2{font-family:var(--display); font-weight:700; font-size:26px; margin:0 0 6px; text-wrap:balance}
+h3{font-family:var(--display); font-weight:700; font-size:18px; margin:22px 0 8px}
+p{max-width:62ch}
+.lede{color:var(--muted); margin-top:0}
+.card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:22px; margin:18px 0}
+.chart{background:#FFFFFF; color:#000; border:1px solid var(--line); border-radius:14px; padding:26px 20px; margin:18px 0; text-align:center}
+.chart .note{font-family:var(--mono); font-size:11px; color:#8a938e; letter-spacing:.05em; margin-top:14px}
+.callout{border-left:3px solid var(--duo-red); background:var(--soft); border-radius:0 10px 10px 0; padding:14px 18px; margin:18px 0}
+.callout.green{border-left-color:var(--duo-green)}
+.btnrow{display:flex; flex-wrap:wrap; gap:10px; margin-top:20px; align-items:center}
+button{font-family:var(--body); font-weight:600; font-size:15px; border:1px solid var(--line); border-radius:10px; padding:11px 20px; cursor:pointer; background:var(--soft); color:var(--ink); transition:background .12s}
+button:hover{background:var(--hover)}
+button.primary{background:var(--btn); color:var(--btn-ink); border-color:var(--btn)}
+button.primary:hover{opacity:.88}
+button.ghost{background:transparent}
+button:focus-visible{outline:2px solid var(--duo-green); outline-offset:2px}
+button:disabled{opacity:.4; cursor:default}
+.skiplink{margin-left:auto; font-size:13.5px; color:var(--muted)}
+.dirpad{display:grid; grid-template-columns:repeat(3,64px); grid-template-rows:repeat(2,54px); gap:8px; justify-content:center; margin:18px auto 0}
+.dirpad button{font-size:22px; padding:0}
+.dirpad .u{grid-column:2; grid-row:1} .dirpad .l{grid-column:1; grid-row:2} .dirpad .d{grid-column:2; grid-row:2} .dirpad .r{grid-column:3; grid-row:2}
+.cantsee{display:block; margin:12px auto 0}
+.mono{font-family:var(--mono)}
+.meas{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.eyebanner{display:flex; align-items:center; gap:14px; background:var(--soft); border:1px solid var(--line); border-radius:12px; padding:14px 18px; margin:16px 0}
+.eyebanner .glyph{font-size:26px}
+label{font-weight:600}
+input[type=number]{font-family:var(--mono); font-size:16px; width:90px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink)}
+input[type=range]{width:100%; accent-color:var(--duo-green)}
+.presets{display:flex; gap:8px; margin:10px 0; flex-wrap:wrap}
+.presets button{padding:7px 14px; font-size:14px}
+.presets button.sel{background:var(--ink); color:var(--paper); border-color:var(--ink)}
+
+/* duochrome */
+.duopanel{display:flex; border-radius:12px; overflow:hidden; max-width:460px; margin:0 auto}
+.duopanel>div{flex:1; padding:26px 8px; display:flex; align-items:center; justify-content:center; gap:10px}
+.duopanel .dr{background:#D40000} .duopanel .dg{background:#008F00}
+.duobtns{display:flex; gap:10px; justify-content:center; margin-top:18px; flex-wrap:wrap}
+
+/* results */
+.res-row{display:flex; align-items:flex-start; gap:14px; padding:14px 0; border-bottom:1px solid var(--line)}
+.res-row:last-child{border-bottom:none}
+.res-row .what{flex:1}
+.res-row .what b{font-family:var(--display); font-size:16px}
+.res-row .what span{display:block; color:var(--muted); font-size:14px; margin-top:2px}
+.pill{font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; padding:4px 10px; border-radius:999px; white-space:nowrap}
+.pill.ok{background:var(--ok-bg); color:var(--ok)}
+.pill.warn{background:var(--warn-bg); color:var(--warn)}
+.pill.alert{background:var(--alert-bg); color:var(--alert)}
+.reco{display:flex; gap:12px; padding:13px 0; border-bottom:1px dashed var(--line); align-items:flex-start}
+.reco:last-child{border-bottom:none}
+.reco .k{font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--duo-green); padding-top:3px; min-width:86px}
+.reco .k.you{color:var(--duo-red); font-weight:600}
+.reco .b b{display:block}
+.reco .b span{color:var(--muted); font-size:14px}
+kbd{font-family:var(--mono); font-size:12.5px; background:var(--soft); border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:1px 6px}
+.checks label{display:flex; gap:10px; align-items:flex-start; font-weight:400; padding:8px 0; cursor:pointer}
+.checks input{margin-top:4px; accent-color:var(--duo-green)}
+.optgrid{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:16px}
+.optgrid button{min-width:64px; font-family:var(--mono); font-size:18px}
+.nearline{cursor:pointer; padding:6px 8px; border-radius:8px; margin:0 auto; max-width:56ch; text-align:left}
+.nearline:hover{background:#F2F5F2}
+.fan line{cursor:pointer}
+.trialinfo{font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.05em; margin-top:6px}
+
+/* strain questionnaire */
+.qrow{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px dashed var(--line)}
+.qrow:last-child{border-bottom:none}
+.qrow .q{flex:1 1 280px; font-weight:400}
+.qrow .opts{display:flex; gap:6px}
+.qrow .opts button{padding:6px 12px; font-size:13.5px}
+.qrow .opts button.sel{background:var(--ink); color:var(--paper); border-color:var(--ink)}
+
+.footer{margin-top:44px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:13.5px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important; animation:none!important}}
+@media print{
+  .chips,.btnrow,button,.hero{display:none!important}
+  body{background:#fff; color:#000}
+  .card,.res-row{border-color:#bbb}
+}
+</style>
+
+<div class="hero" aria-hidden="true">
+  <div class="r"><div class="opto">C O Z</div><div class="sub">Rouge</div></div>
+  <div class="g"><div class="opto">N H V</div><div class="sub">Vert</div></div>
+</div>
+
+<div class="wrap">
+  <div class="masthead">
+    <h1>Okulist</h1>
+    <div class="tag">Auto-dépistage visuel · v2</div>
+  </div>
+  <div class="chips" id="chips" role="list"></div>
+  <main id="stage"></main>
+  <div class="footer">
+    Okulist est un outil d'auto-dépistage <b>indicatif</b>. Il ne mesure pas votre réfraction et ne remplace
+    ni un examen ophtalmologique ni des lunettes. En cas de doute, de gêne persistante ou de résultat anormal,
+    consultez un ophtalmologiste ou un orthoptiste.
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const stage = $("#stage");
+
+/* ---------------- state ---------------- */
+const S = { pxmm: 4.0, distCm: 70, res: {} };
+try{
+  const saved = JSON.parse(localStorage.getItem("okulist-calib")||"null");
+  if(saved && saved.pxmm > 1 && saved.pxmm < 30){ S.pxmm = saved.pxmm; S.distCm = saved.distCm || 70; }
+}catch(e){}
+const mm = x => x * S.pxmm;
+
+/* ---------------- step engine ---------------- */
+const CHIPS = ["Calibrage","Acuité","Duochrome","Astigmatisme","Contraste","Près","Amsler","Couleurs","Fatigue","Bilan"];
+let steps = [];
+let cur = 0;
+let keyHandler = null;
+
+function renderChips(){
+  const el = $("#chips"); el.innerHTML = "";
+  const curChip = steps[cur].chip;
+  const done = new Set(steps.slice(0, cur).map(s=>s.chip));
+  CHIPS.forEach(c=>{
+    const d = document.createElement("div");
+    const isDone = done.has(c) && c!==curChip;
+    d.className = "chip" + (c===curChip ? " now" : (isDone ? " done":""));
+    d.textContent = c; d.setAttribute("role","listitem");
+    if(isDone){
+      d.title = "Revenir à cette étape";
+      d.onclick = ()=>goTo(steps.findIndex(s=>s.chip===c));
+    }
+    el.appendChild(d);
+  });
+}
+function goTo(i){
+  cur = Math.max(0, Math.min(i, steps.length-1));
+  keyHandler = null;
+  stage.innerHTML = "";
+  renderChips();
+  steps[cur].render(stage);
+  window.scrollTo({top:0});
+}
+const next = () => goTo(cur+1);
+const back = () => goTo(cur-1);
+document.addEventListener("keydown", e=>{
+  if(keyHandler && ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)){
+    e.preventDefault(); keyHandler(e.key);
+  }
+});
+
+function navRow(el, opts={}){
+  const row = document.createElement("div"); row.className="btnrow";
+  if(cur>0){ const b=document.createElement("button"); b.className="ghost"; b.textContent="← Retour"; b.onclick=back; row.appendChild(b); }
+  if(!opts.noNext){
+    const n=document.createElement("button"); n.className="primary";
+    n.textContent = opts.nextLabel || "Continuer";
+    n.onclick = opts.onNext || next;
+    row.appendChild(n);
+  }
+  if(opts.skippable){
+    const s=document.createElement("button"); s.className="ghost skiplink";
+    s.textContent = "Passer ce test →";
+    s.onclick = ()=>{ if(opts.onSkip) opts.onSkip(); next(); };
+    row.appendChild(s);
+  }
+  el.appendChild(row);
+  return row;
+}
+
+/* ---------------- shared pieces ---------------- */
+const EYES = { od:{name:"œil droit", cover:"gauche"}, og:{name:"œil gauche", cover:"droit"} };
+function eyeBanner(eye){
+  const e = EYES[eye];
+  return `<div class="eyebanner"><div class="glyph">🤚</div>
+    <div><b>Test de l'${e.name}.</b> Couvrez votre œil ${e.cover} avec la paume
+    (sans appuyer), et gardez les deux yeux ouverts derrière la main.</div></div>`;
+}
+
+const DIRS = { right:0, down:90, left:180, up:270 };
+function landoltSVG(sizePx, dir, color="#000", bg="#fff"){
+  return `<svg width="${sizePx}" height="${sizePx}" viewBox="0 0 5 5" style="display:block" aria-label="anneau">
+    <g transform="rotate(${DIRS[dir]} 2.5 2.5)">
+      <circle cx="2.5" cy="2.5" r="2" fill="none" stroke="${color}" stroke-width="1"/>
+      <rect x="3.9" y="2" width="1.2" height="1" fill="${bg}"/>
+    </g></svg>`;
+}
+function randDir(prev){
+  const keys = Object.keys(DIRS).filter(k=>k!==prev);
+  return keys[Math.floor(Math.random()*keys.length)];
+}
+function dirPad(onAnswer, cantSeeLabel){
+  const wrapEl = document.createElement("div");
+  const pad = document.createElement("div"); pad.className="dirpad";
+  [["u","↑","up"],["l","←","left"],["d","↓","down"],["r","→","right"]].forEach(([cls,sym,dir])=>{
+    const b=document.createElement("button"); b.className=cls; b.textContent=sym;
+    b.setAttribute("aria-label",dir); b.onclick=()=>onAnswer(dir); pad.appendChild(b);
+  });
+  wrapEl.appendChild(pad);
+  const c=document.createElement("button"); c.className="ghost cantsee";
+  c.textContent = cantSeeLabel || "Je ne distingue pas l'ouverture";
+  c.onclick=()=>onAnswer(null); wrapEl.appendChild(c);
+  keyHandler = k => onAnswer({ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right"}[k]);
+  return wrapEl;
+}
+
+/* ---------------- step: intro ---------------- */
+function stepIntro(el){
+  let lastBilan = null;
+  try{ lastBilan = JSON.parse(localStorage.getItem("okulist-last")||"null"); }catch(e){}
+  el.innerHTML = `
+    <h2>Faites le point sur votre vue, depuis votre écran</h2>
+    <p class="lede">Neuf tests — environ 10 minutes — pour repérer une baisse d'acuité, une tendance
+    myopique ou hypermétropique, un astigmatisme, une baisse de contraste, une presbytie, une anomalie
+    maculaire, une déficience des couleurs ou une fatigue visuelle numérique. À la fin, Okulist vous
+    propose les réglages macOS les plus utiles selon vos résultats. Chaque test peut être passé.</p>
+    <div class="callout"><b>Soyons honnêtes :</b> aucun filtre logiciel ne peut corriger optiquement une myopie,
+    une hypermétropie ou un astigmatisme — seuls des verres ou des lentilles le font. Un écran bien réglé peut en
+    revanche rester <i>lisible et confortable</i> sans lunettes dans beaucoup de cas légers. C'est l'objectif ici.</div>
+    <div class="card">
+      <h3 style="margin-top:0">Avant de commencer</h3>
+      <ul style="margin:0; padding-left:20px">
+        <li>Montez la <b>luminosité de l'écran</b> au maximum confortable et nettoyez-le.</li>
+        <li>Désactivez Night Shift / True Tone le temps du test si possible.</li>
+        <li>Munissez-vous d'une <b>carte bancaire</b> (pour calibrer l'écran) et si possible d'un mètre.</li>
+        <li>Si vous portez habituellement des lunettes, faites le test <b>sans</b> : c'est votre vision
+        non corrigée que l'on veut évaluer pour régler l'écran.</li>
+        <li>Installez-vous face à l'écran, dos à la lumière, sans reflets.</li>
+      </ul>
+    </div>
+    ${lastBilan ? `<p class="mono" style="font-size:13px; color:var(--muted)">Dernier bilan enregistré sur cet appareil : ${lastBilan.date}</p>` : ""}`;
+  const row = navRow(el, {nextLabel:"Commencer le calibrage"});
+  if(lastBilan){
+    const b=document.createElement("button"); b.textContent="Revoir mon dernier bilan";
+    b.onclick=()=>{ S.res = lastBilan.res; goTo(steps.length-1); };
+    row.appendChild(b);
+  }
+}
+
+/* ---------------- step: calibration ---------------- */
+function stepCalib(el){
+  el.innerHTML = `
+    <h2>Calibrage de l'écran</h2>
+    <p class="lede">Posez une carte bancaire contre l'écran et ajustez le rectangle avec le curseur
+    jusqu'à ce qu'il ait exactement la même largeur que la carte (85,6 mm).</p>
+    <div class="chart">
+      <div id="cardbox" style="margin:0 auto; background:#2E3A46; border-radius:10px; position:relative; color:#fff">
+        <div style="position:absolute; left:14px; top:16px; width:34px; height:26px; background:#D9B44A; border-radius:4px"></div>
+        <div style="position:absolute; left:14px; bottom:14px; font-family:var(--mono); font-size:13px; letter-spacing:.15em">OKULIST&nbsp;BANK</div>
+      </div>
+      <div style="max-width:420px; margin:18px auto 0">
+        <input type="range" id="cardrange" min="180" max="640" step="1" aria-label="largeur de la carte">
+      </div>
+      <div class="note">Largeur affichée : <span class="meas" id="pxmmval"></span></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Distance de l'écran</h3>
+      <p style="margin-top:0">À quelle distance vos yeux sont-ils de l'écran pendant les tests de loin ?
+      Une longueur de bras tendu ≈ 70 cm. Gardez cette distance pendant les tests d'acuité, duochrome,
+      d'astigmatisme et de contraste.</p>
+      <div class="presets" id="distpresets"></div>
+      <label>Distance : <input type="number" id="distinput" min="30" max="200" step="5"> cm</label>
+    </div>`;
+  const box = $("#cardbox"), range = $("#cardrange"), val = $("#pxmmval");
+  const CARD_MM = 85.6;
+  function setW(w){
+    box.style.width = w+"px"; box.style.height = (w*53.98/CARD_MM)+"px";
+    S.pxmm = w/CARD_MM;
+    val.textContent = w+" px ≈ "+S.pxmm.toFixed(2)+" px/mm";
+  }
+  range.value = Math.round(S.pxmm*CARD_MM);
+  setW(+range.value);
+  range.oninput = ()=>setW(+range.value);
+  const distIn = $("#distinput"); distIn.value = S.distCm;
+  const pres = $("#distpresets");
+  [["50 cm",50],["70 cm — bras tendu",70],["100 cm",100]].forEach(([lab,v])=>{
+    const b=document.createElement("button"); b.textContent=lab;
+    if(v===+distIn.value) b.classList.add("sel");
+    b.onclick=()=>{ distIn.value=v; [...pres.children].forEach(x=>x.classList.remove("sel")); b.classList.add("sel"); };
+    pres.appendChild(b);
+  });
+  distIn.oninput = ()=>[...pres.children].forEach(x=>x.classList.remove("sel"));
+  navRow(el, {onNext(){
+    S.distCm = Math.max(30, Math.min(200, +distIn.value || 70));
+    try{ localStorage.setItem("okulist-calib", JSON.stringify({pxmm:S.pxmm, distCm:S.distCm})); }catch(e){}
+    next();
+  }});
+}
+
+/* ---------------- step: acuity (per eye) ---------------- */
+const DX_LEVELS = [1,2,3,4,5,6,7,8,9,10,12];
+function gapPx(dx){
+  const arcmin = 10/dx;
+  const rad = arcmin/60*Math.PI/180;
+  return S.distCm*10*rad*S.pxmm;
+}
+function acuityStep(eye){ return { chip:"Acuité", render(el){
+  el.innerHTML = `<h2>Acuité de loin — ${EYES[eye].name}</h2>
+    <p class="lede">Un anneau ouvert s'affiche, de plus en plus petit. Indiquez de quel côté se trouve
+    l'<b>ouverture</b> — boutons ou flèches du clavier. Exemple : ${landoltSVG(28,"up").replace('style="display:block"','style="display:inline-block; vertical-align:middle; background:#fff; border-radius:4px; padding:2px"')}
+    → l'ouverture est en <b>haut</b>. Restez bien à ${S.distCm} cm.</p>
+    ${eyeBanner(eye)}
+    <div class="chart"><div id="opto" style="min-height:120px; display:flex; align-items:center; justify-content:center"></div>
+    <div class="trialinfo" id="tinfo" aria-live="polite"></div>
+    <div class="note">Fond blanc volontaire : le test se fait à pleine luminosité.</div></div>
+    <div id="answer"></div>`;
+  const opto = $("#opto"), tinfo = $("#tinfo");
+  const levels = DX_LEVELS.filter(dx => gapPx(dx)*5 >= 6);
+  const screenCapped = levels.length < DX_LEVELS.length;
+  let li = 0, mode = "fast", confirmOK = 0, confirmN = 0, lastPassed = null, dir = randDir();
+
+  function show(){
+    const dx = levels[li];
+    opto.innerHTML = landoltSVG(Math.round(gapPx(dx)*5), dir);
+    tinfo.textContent = "niveau "+dx+"/10";
+  }
+  function finish(dx){
+    S.res["acuity_"+eye] = { dx, capped: screenCapped && dx===levels[levels.length-1] };
+    next();
+  }
+  function answer(d){
+    const good = d === dir;
+    dir = randDir(dir);
+    if(mode==="fast"){
+      if(good){
+        lastPassed = levels[li];
+        if(li === levels.length-1) return finish(lastPassed);
+        li++; show();
+      }else{ mode="confirm"; confirmOK=0; confirmN=1; show(); }
+    }else{
+      confirmN++; if(good) confirmOK++;
+      if(confirmOK>=3){
+        lastPassed = levels[li]; mode="fast";
+        if(li === levels.length-1) return finish(lastPassed);
+        li++; show();
+      }else if(confirmN>=5 || confirmN-confirmOK>=3){
+        return finish(lastPassed ?? 0);
+      }else show();
+    }
+  }
+  $("#answer").appendChild(dirPad(answer));
+  show();
+  navRow(el, {noNext:true, skippable:true});
+}};}
+
+/* ---------------- step: duochrome (per eye) ---------------- */
+function duoStep(eye){ return { chip:"Duochrome", render(el){
+  const measured = S.res["acuity_"+eye]?.dx;
+  const dx = measured && measured>=2 ? Math.min(measured,8) : 5;
+  const size = Math.max(18, Math.round(gapPx(dx)*5*1.4));
+  const dirs = [randDir()]; dirs.push(randDir(dirs[0])); dirs.push(randDir(dirs[1]));
+  const rings = bg => dirs.map(d=>landoltSVG(size, d, "#000", bg)).join("");
+  el.innerHTML = `<h2>Test duochrome — ${EYES[eye].name}</h2>
+    <p class="lede">C'est le test des deux fonds rouge et vert que votre ophtalmologiste utilise en fin
+    de réfraction. À ${S.distCm} cm, comparez les anneaux noirs : sont-ils plus <b>nets et contrastés</b>
+    sur le fond rouge, sur le fond vert, ou pareils ? (Ne cherchez pas la préférence esthétique —
+    seulement la netteté.)</p>
+    ${eyeBanner(eye)}
+    <div class="chart">
+      <div class="duopanel"><div class="dr">${rings("#D40000")}</div><div class="dg">${rings("#008F00")}</div></div>
+      <div class="note">Fonctionne aussi en cas de daltonisme : seul le contraste compte.</div>
+    </div>
+    <div class="duobtns">
+      <button id="dred">Plus net sur le rouge</button>
+      <button id="deq">Identiques</button>
+      <button id="dgreen">Plus net sur le vert</button>
+    </div>`;
+  const rec = v => ()=>{ S.res["duo_"+eye] = v; next(); };
+  $("#dred").onclick = rec("red");
+  $("#deq").onclick = rec("eq");
+  $("#dgreen").onclick = rec("green");
+  navRow(el, {noNext:true, skippable:true});
+}};}
+
+/* ---------------- step: astigmatism fan (per eye) ---------------- */
+function astigStep(eye){ return { chip:"Astigmatisme", render(el){
+  el.innerHTML = `<h2>Cadran d'astigmatisme — ${EYES[eye].name}</h2>
+    <p class="lede">Fixez le centre du cadran à ${S.distCm} cm. Toutes les lignes ont exactement
+    la même épaisseur et le même noir. Si certaines vous paraissent <b>plus noires ou plus nettes</b>
+    que d'autres, cliquez sur la plus noire.</p>
+    ${eyeBanner(eye)}
+    <div class="chart"><div id="fanbox"></div></div>
+    <div class="btnrow" style="justify-content:center">
+      <button class="primary" id="allsame">Toutes les lignes me semblent identiques</button>
+    </div>`;
+  const R = Math.min(mm(38), 150), C = R+10;
+  let svg = `<svg class="fan" width="${2*C}" height="${2*C}" viewBox="0 0 ${2*C} ${2*C}" style="margin:0 auto; display:block">`;
+  for(let a=0; a<180; a+=15){
+    const r = a*Math.PI/180, x=Math.cos(r), y=Math.sin(r);
+    svg += `<g><line x1="${C+x*R*0.18}" y1="${C-y*R*0.18}" x2="${C+x*R}" y2="${C-y*R}"
+      stroke="#000" stroke-width="${Math.max(2,mm(0.5))}" data-a="${a}"/>
+      <line x1="${C-x*R*0.18}" y1="${C+y*R*0.18}" x2="${C-x*R}" y2="${C+y*R}"
+      stroke="#000" stroke-width="${Math.max(2,mm(0.5))}" data-a="${a}"/></g>`;
+  }
+  svg += `<circle cx="${C}" cy="${C}" r="${Math.max(2.5,mm(0.8))}" fill="#C0362E"/></svg>`;
+  $("#fanbox").innerHTML = svg;
+  document.querySelectorAll(".fan line").forEach(l=>{
+    l.addEventListener("click", ()=>{ S.res["astig_"+eye] = { axis:+l.dataset.a }; next(); });
+  });
+  $("#allsame").onclick = ()=>{ S.res["astig_"+eye] = { axis:null }; next(); };
+  navRow(el, {noNext:true, skippable:true});
+}};}
+
+/* ---------------- step: contrast ---------------- */
+const CONTRASTS = [1, .5, .25, .125, .06, .03, .015];
+function stepContrast(el){
+  el.innerHTML = `<h2>Sensibilité au contraste</h2>
+    <p class="lede">Les deux yeux ouverts, à ${S.distCm} cm. Même principe que l'acuité,
+    mais l'anneau devient de plus en plus pâle. Indiquez le côté de l'ouverture.</p>
+    <div class="chart"><div id="opto" style="min-height:120px; display:flex; align-items:center; justify-content:center"></div>
+    <div class="trialinfo" id="tinfo" aria-live="polite"></div></div>
+    <div id="answer"></div>`;
+  const size = Math.max(40, Math.round(gapPx(2.5)*5));
+  let ci = 0, misses = 0, lastPassed = null, dir = randDir();
+  const opto=$("#opto"), tinfo=$("#tinfo");
+  function gray(c){ const v = Math.round(255*Math.pow(1-c, 1/2.2)); return `rgb(${v},${v},${v})`; }
+  function show(){
+    opto.innerHTML = landoltSVG(size, dir, gray(CONTRASTS[ci]));
+    tinfo.textContent = "contraste "+(CONTRASTS[ci]*100).toLocaleString("fr-FR")+" %";
+  }
+  function finish(){
+    S.res.contrast = { logCS: lastPassed==null ? 0 : +(-Math.log10(lastPassed)).toFixed(2), floor: lastPassed };
+    next();
+  }
+  function answer(d){
+    if(d===dir){
+      lastPassed = CONTRASTS[ci]; misses = 0;
+      if(ci===CONTRASTS.length-1) return finish();
+      ci++; dir=randDir(dir); show();
+    }else{
+      misses++; dir=randDir(dir);
+      if(misses>=2) return finish();
+      show();
+    }
+  }
+  $("#answer").appendChild(dirPad(answer));
+  show();
+  navRow(el, {noNext:true, skippable:true});
+}
+
+/* ---------------- step: near vision ---------------- */
+const NEAR_SIZES = [2.6, 2.0, 1.6, 1.25, 1.0, 0.8];
+const NEAR_TEXTS = [
+  "Le soir venu, les mouettes survolaient lentement le vieux port.",
+  "Un vent tiède faisait frissonner les volets de la maison jaune.",
+  "Derrière la colline, le boulanger allumait déjà son grand four.",
+  "Les enfants comptaient les wagons du train qui filait vers Lyon.",
+  "Une fine pluie d'automne brillait sur les pavés de la ruelle.",
+  "Le chat gris dormait entre deux piles de journaux anciens."
+];
+function stepNear(el){
+  el.innerHTML = `<h2>Vision de près</h2>
+    <p class="lede">Rapprochez-vous : tenez-vous à <b>40 cm</b> de l'écran (distance de lecture),
+    les deux yeux ouverts. Cliquez sur la <b>plus petite ligne</b> que vous lisez sans effort
+    et sans plisser les yeux.</p>
+    <div class="chart" style="text-align:center"><div id="lines"></div>
+      <div class="note">À 40 cm de l'écran — ni plus près, ni plus loin.</div></div>
+    <div class="btnrow" style="justify-content:center">
+      <button class="ghost" id="none">Aucune ligne n'est confortable</button>
+    </div>`;
+  const lines = $("#lines");
+  NEAR_SIZES.forEach((mmH,i)=>{
+    const d=document.createElement("div"); d.className="nearline";
+    d.style.fontSize = (mm(mmH)/0.72)+"px"; d.style.lineHeight = "1.3";
+    d.textContent = NEAR_TEXTS[i];
+    d.onclick=()=>{ S.res.near = { mm: mmH }; next(); };
+    lines.appendChild(d);
+  });
+  $("#none").onclick=()=>{ S.res.near = { mm: null }; next(); };
+  navRow(el, {noNext:true, skippable:true});
+}
+
+/* ---------------- step: Amsler (per eye) ---------------- */
+const AMSLER_FLAGS = [
+  "Certaines lignes paraissent ondulées ou tordues",
+  "Des zones de la grille sont floues, grises ou manquantes",
+  "Le point central disparaît quand je le fixe",
+  "Une tache sombre gêne une partie de la grille"
+];
+function amslerStep(eye){ return { chip:"Amsler", render(el){
+  const g = Math.min(mm(100), Math.min(stage.clientWidth-80, 420));
+  const cells = 20, cs = g/cells;
+  let svg = `<svg width="${g}" height="${g}" viewBox="0 0 ${g} ${g}" style="display:block;margin:0 auto">`;
+  for(let i=0;i<=cells;i++){
+    svg += `<line x1="${i*cs}" y1="0" x2="${i*cs}" y2="${g}" stroke="#000" stroke-width="1.2"/>`;
+    svg += `<line x1="0" y1="${i*cs}" x2="${g}" y2="${i*cs}" stroke="#000" stroke-width="1.2"/>`;
+  }
+  svg += `<circle cx="${g/2}" cy="${g/2}" r="${Math.max(3,mm(1.2))}" fill="#000"/></svg>`;
+  el.innerHTML = `<h2>Grille d'Amsler — ${EYES[eye].name}</h2>
+    <p class="lede">À environ <b>30–40 cm</b>, fixez le point central <b>sans quitter</b> le centre des yeux,
+    et observez la grille en vision périphérique. Cochez ce que vous constatez.</p>
+    ${eyeBanner(eye)}
+    <div class="chart">${svg}</div>
+    <div class="card checks" id="checks"></div>`;
+  const box = $("#checks");
+  AMSLER_FLAGS.forEach((t,i)=>{
+    const l=document.createElement("label");
+    l.innerHTML = `<input type="checkbox" data-i="${i}"> <span>${t}</span>`;
+    box.appendChild(l);
+  });
+  const none=document.createElement("label");
+  none.innerHTML = `<input type="checkbox"> <span><b>Rien de tout cela</b> — la grille est régulière partout</span>`;
+  box.appendChild(none);
+  navRow(el, {skippable:true, onNext(){
+    const flags = [...box.querySelectorAll("input[data-i]:checked")].map(i=>+i.dataset.i);
+    S.res["amsler_"+eye] = { flags };
+    next();
+  }});
+}};}
+
+/* ---------------- step: color plates ---------------- */
+const PLATES = [
+  { d:"8", mode:"ctrl", opts:["3","6","8","9"] },
+  { d:"3", mode:"rg",   opts:["3","5","8","9"] },
+  { d:"5", mode:"rg",   opts:["2","3","5","6"] },
+  { d:"7", mode:"rg",   opts:["1","4","7","9"] },
+  { d:"2", mode:"rg",   opts:["2","3","5","7"] }
+];
+function drawPlate(canvas, digit, mode){
+  const size = canvas.clientWidth, dpr = window.devicePixelRatio||1;
+  canvas.width = size*dpr; canvas.height = size*dpr;
+  const ctx = canvas.getContext("2d"); ctx.scale(dpr,dpr);
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,size,size);
+  const m=document.createElement("canvas"); m.width=size; m.height=size;
+  const mc=m.getContext("2d");
+  mc.fillStyle="#000"; mc.fillRect(0,0,size,size);
+  mc.fillStyle="#fff"; mc.font=`900 ${size*0.62}px "Public Sans", Arial, sans-serif`;
+  mc.textAlign="center"; mc.textBaseline="middle";
+  mc.fillText(digit, size/2, size/2 + size*0.03);
+  const data = mc.getImageData(0,0,size,size).data;
+  const inDigit=(x,y)=> data[((y|0)*size+(x|0))*4] > 128;
+  const j=(a,b)=>a+Math.random()*(b-a);
+  const cx=size/2, cy=size/2, R=size/2-2, cell=size/27;
+  for(let gy=cell/2; gy<size; gy+=cell) for(let gx=cell/2; gx<size; gx+=cell){
+    const x=gx+(Math.random()-.5)*cell*.7, y=gy+(Math.random()-.5)*cell*.7;
+    if(Math.hypot(x-cx,y-cy) > R-cell/2) continue;
+    const r=cell*(0.27+Math.random()*0.2);
+    const fig=inDigit(x,y);
+    let col;
+    if(mode==="ctrl"){
+      col = fig ? `hsl(${j(16,28)} 72% ${j(38,50)}%)` : `hsl(${j(200,216)} 16% ${j(58,72)}%)`;
+    }else{
+      const L=j(46,62);
+      col = fig ? `hsl(${j(6,26)} ${j(46,60)}% ${L}%)` : `hsl(${j(68,96)} ${j(28,42)}% ${L}%)`;
+    }
+    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+  }
+}
+function stepColor(el){
+  el.innerHTML = `<h2>Vision des couleurs</h2>
+    <p class="lede">Les deux yeux ouverts. Un chiffre se cache dans chaque disque de points colorés.
+    Répondez rapidement, sans forcer. <span class="mono" style="font-size:12px">Test indicatif —
+    la fidélité des couleurs dépend de votre écran.</span></p>
+    <div class="chart"><canvas id="plate" style="width:min(70vw,300px); aspect-ratio:1"></canvas>
+    <div class="trialinfo" id="pinfo" aria-live="polite"></div></div>
+    <div class="optgrid" id="opts"></div>`;
+  let pi=0; const answers=[];
+  const canvas=$("#plate"), opts=$("#opts"), pinfo=$("#pinfo");
+  function show(){
+    const p=PLATES[pi];
+    drawPlate(canvas, p.d, p.mode);
+    pinfo.textContent = "planche "+(pi+1)+" / "+PLATES.length;
+    opts.innerHTML="";
+    [...p.opts].sort(()=>Math.random()-.5).forEach(o=>{
+      const b=document.createElement("button"); b.textContent=o;
+      b.onclick=()=>answer(o); opts.appendChild(b);
+    });
+    const n=document.createElement("button"); n.textContent="Je ne vois pas de chiffre";
+    n.style.fontFamily="var(--body)"; n.style.fontSize="14px";
+    n.onclick=()=>answer(null); opts.appendChild(n);
+  }
+  function answer(v){
+    answers.push({ok: v===PLATES[pi].d, ctrl: PLATES[pi].mode==="ctrl"});
+    pi++;
+    if(pi>=PLATES.length){
+      const ctrlOK = answers.filter(a=>a.ctrl).every(a=>a.ok);
+      const rg = answers.filter(a=>!a.ctrl);
+      S.res.color = { ctrlOK, good: rg.filter(a=>a.ok).length, total: rg.length };
+      next();
+    }else show();
+  }
+  show();
+  navRow(el, {noNext:true, skippable:true});
+}
+
+/* ---------------- step: digital eye strain questionnaire ---------------- */
+const STRAIN_Q = [
+  "Yeux secs, qui piquent ou qui brûlent devant l'écran",
+  "Maux de tête en fin de journée de travail sur écran",
+  "Vision floue passagère en quittant l'écran des yeux",
+  "Éblouissement gênant (écran, phares la nuit)",
+  "Larmoiement ou envie de se frotter les yeux",
+  "Difficulté à garder les yeux ouverts en fin de journée"
+];
+function stepStrain(el){
+  el.innerHTML = `<h2>Fatigue visuelle numérique</h2>
+    <p class="lede">Sur les deux dernières semaines, à quelle fréquence avez-vous ressenti
+    chacun de ces signes ?</p>
+    <div class="card" id="qs"></div>`;
+  const qs = $("#qs");
+  const answers = new Array(STRAIN_Q.length).fill(null);
+  let nextBtn;
+  STRAIN_Q.forEach((q,i)=>{
+    const row=document.createElement("div"); row.className="qrow";
+    row.innerHTML = `<div class="q">${q}</div>`;
+    const o=document.createElement("div"); o.className="opts";
+    [["Jamais",0],["Parfois",1],["Souvent",2]].forEach(([lab,v])=>{
+      const b=document.createElement("button"); b.textContent=lab;
+      b.onclick=()=>{
+        answers[i]=v;
+        [...o.children].forEach(x=>x.classList.remove("sel")); b.classList.add("sel");
+        if(nextBtn) nextBtn.disabled = answers.some(a=>a===null);
+      };
+      o.appendChild(b);
+    });
+    row.appendChild(o); qs.appendChild(row);
+  });
+  const row = navRow(el, {skippable:true, onNext(){
+    S.res.strain = { score: answers.reduce((a,b)=>a+(b||0),0), max: STRAIN_Q.length*2 };
+    next();
+  }});
+  nextBtn = row.querySelector(".primary");
+  nextBtn.disabled = true;
+}
+
+/* ---------------- results ---------------- */
+function pill(kind, txt){ return `<span class="pill ${kind}">${txt}</span>`; }
+function evalAcuity(dx){
+  if(dx>=8) return ["ok","Bonne"];
+  if(dx>=5) return ["warn","Modérément réduite"];
+  return ["alert","Réduite"];
+}
+function stepResults(el){
+  const r = S.res;
+  const flags = { lowAcu:false, veryLow:false, astig:false, lowCtr:false, presby:false,
+                  amsler:false, color:false, myopic:false, hyperopic:false, strain:false };
+  let rows = "";
+
+  /* acuity */
+  const od = r.acuity_od?.dx ?? null, og = r.acuity_og?.dx ?? null;
+  if(od!=null || og!=null){
+    const present = [od,og].filter(v=>v!=null);
+    const worst = Math.min(...present);
+    const [k,lab] = evalAcuity(worst);
+    flags.lowAcu = worst<8; flags.veryLow = worst<5;
+    const diff = (od!=null && og!=null) ? Math.abs(od-og) : 0;
+    if(diff>=3) flags.lowAcu = true;
+    rows += `<div class="res-row"><div class="what"><b>Acuité de loin</b>
+      <span>${od!=null?"Œil droit "+od+"/10":""}${od!=null&&og!=null?" · ":""}${og!=null?"œil gauche "+og+"/10":""}${(r.acuity_od?.capped||r.acuity_og?.capped)?" · mesure limitée par la finesse de l'écran à cette distance":""}${diff>=3?" · <b>écart marqué entre les deux yeux</b>":""}</span></div>
+      ${pill(k,lab)}</div>`;
+  }
+
+  /* duochrome */
+  const duos = ["od","og"].map(e=>r["duo_"+e]).filter(v=>v!==undefined);
+  if(duos.length){
+    const reds = duos.filter(v=>v==="red").length, greens = duos.filter(v=>v==="green").length;
+    flags.myopic = reds>0 && greens===0;
+    flags.hyperopic = greens>0 && reds===0;
+    const txt = flags.myopic ? "Plus net sur fond rouge — évocateur d'une tendance myopique légère"
+      : flags.hyperopic ? "Plus net sur fond vert — évocateur d'une tendance hypermétropique ou d'une presbytie"
+      : reds&&greens ? "Réponses opposées entre les deux yeux — à faire préciser par une réfraction"
+      : "Équilibré : netteté identique sur les deux fonds";
+    rows += `<div class="res-row"><div class="what"><b>Duochrome rouge / vert</b><span>${txt}</span></div>
+      ${flags.myopic||flags.hyperopic||(reds&&greens) ? pill("warn","Tendance détectée") : pill("ok","Équilibré")}</div>`;
+  }
+
+  /* astigmatism */
+  const astigTxt = [];
+  if(r.astig_od && r.astig_od.axis!==null) astigTxt.push("œil droit (lignes vers "+r.astig_od.axis+"°)");
+  if(r.astig_og && r.astig_og.axis!==null) astigTxt.push("œil gauche (lignes vers "+r.astig_og.axis+"°)");
+  flags.astig = astigTxt.length>0;
+  if(r.astig_od || r.astig_og){
+    rows += `<div class="res-row"><div class="what"><b>Astigmatisme</b>
+      <span>${flags.astig ? "Lignes inégales : "+astigTxt.join(" · ")+" — évocateur d'un astigmatisme" : "Cadran homogène"}</span></div>
+      ${flags.astig ? pill("warn","À faire vérifier") : pill("ok","Rien à signaler")}</div>`;
+  }
+
+  /* contrast */
+  if(r.contrast){
+    const cs = r.contrast.logCS;
+    const k = cs>=1.5 ? "ok" : cs>=1.0 ? "warn" : "alert";
+    flags.lowCtr = cs<1.5;
+    rows += `<div class="res-row"><div class="what"><b>Sensibilité au contraste</b>
+      <span>Plus faible contraste perçu : ${r.contrast.floor ? (r.contrast.floor*100).toLocaleString("fr-FR")+" %" : "—"} (log CS ≈ ${cs.toFixed(1)})</span></div>
+      ${pill(k, k==="ok"?"Bonne":k==="warn"?"Un peu basse":"Basse")}</div>`;
+  }
+
+  /* near */
+  if(r.near){
+    const n = r.near.mm;
+    const k = n==null ? "alert" : n<=1.0 ? "ok" : n<=1.6 ? "warn" : "alert";
+    flags.presby = n==null || n>1.0;
+    rows += `<div class="res-row"><div class="what"><b>Vision de près (40 cm)</b>
+      <span>${n==null ? "Aucune ligne lue confortablement" : "Plus petite ligne confortable : hauteur ≈ "+n.toLocaleString("fr-FR")+" mm"}</span></div>
+      ${pill(k, k==="ok"?"Bonne":k==="warn"?"Un peu juste":"Réduite")}</div>`;
+  }
+
+  /* amsler */
+  if(r.amsler_od || r.amsler_og){
+    const amFlags = (r.amsler_od?.flags?.length||0) + (r.amsler_og?.flags?.length||0);
+    flags.amsler = amFlags>0;
+    rows += `<div class="res-row"><div class="what"><b>Grille d'Amsler</b>
+      <span>${flags.amsler ? "Anomalies signalées ("+amFlags+") — déformations ou zones manquantes" : "Grille régulière"}</span></div>
+      ${flags.amsler ? pill("alert","Consultez rapidement") : pill("ok","Rien à signaler")}</div>`;
+  }
+
+  /* color */
+  if(r.color){
+    const c = r.color;
+    flags.color = c.ctrlOK && c.good < c.total-1;
+    const txt = !c.ctrlOK ? "Planche témoin ratée — test non interprétable sur cet écran"
+      : c.good+" / "+c.total+" planches rouge-vert reconnues";
+    rows += `<div class="res-row"><div class="what"><b>Vision des couleurs</b><span>${txt}</span></div>
+      ${!c.ctrlOK ? pill("warn","Non interprétable") : flags.color ? pill("warn","Déficience possible") : pill("ok","Rien à signaler")}</div>`;
+  }
+
+  /* strain */
+  if(r.strain){
+    const sc = r.strain.score;
+    const k = sc<=3 ? "ok" : sc<=7 ? "warn" : "alert";
+    flags.strain = sc>3;
+    rows += `<div class="res-row"><div class="what"><b>Fatigue visuelle numérique</b>
+      <span>Score ${sc} / ${r.strain.max}</span></div>
+      ${pill(k, k==="ok"?"Faible":k==="warn"?"Modérée":"Marquée")}</div>`;
+  }
+
+  if(!rows) rows = `<p style="margin:0">Tous les tests ont été passés — rien à afficher. Refaites le parcours pour obtenir un bilan.</p>`;
+
+  /* recommendations */
+  const recos = [];
+  const R_ = (you, title, body) => recos.push({you, title, body});
+  R_(flags.lowAcu||flags.presby, "Texte plus grand partout",
+    `Réglages Système → <b>Écrans</b> → déplacez le curseur de résolution vers « Texte plus grand ». C'est le réglage qui change le plus la vie sans lunettes.`);
+  R_(flags.lowAcu||flags.presby, "Zoom instantané",
+    `Réglages Système → <b>Accessibilité → Zoom</b> → activez « Utiliser le geste de défilement avec les touches de modification » : <kbd>ctrl</kbd> + molette/deux doigts zoome où que vous soyez. Raccourci plein écran : <kbd>⌥</kbd><kbd>⌘</kbd><kbd>8</kbd>.`);
+  R_(flags.myopic, "Rapprochez l'écran plutôt que d'agrandir",
+    `Une tendance myopique légère voit net de près : un écran à 50–60 cm peut rester parfaitement lisible là où un agrandissement extrême fatigue. Ajustez la profondeur du bureau avant la taille du texte.`);
+  R_(flags.hyperopic||flags.presby, "Taille du texte système et des apps",
+    `Réglages Système → <b>Accessibilité → Affichage → Taille du texte</b>. Dans la plupart des apps : <kbd>⌘</kbd><kbd>+</kbd>. Dans Safari : Réglages → Sites web → Zoom de page pour un zoom permanent par site.`);
+  R_(flags.lowCtr, "Contraste renforcé",
+    `Réglages Système → <b>Accessibilité → Affichage</b> → activez « Augmenter le contraste » et « Réduire la transparence ». Les bords des fenêtres et le texte gagnent nettement en lisibilité.`);
+  R_(flags.lowAcu, "Pointeur plus visible",
+    `Réglages Système → <b>Accessibilité → Affichage → Pointeur</b> → augmentez la taille et ajoutez un contour de couleur. « Agiter la souris pour la localiser » aide aussi.`);
+  R_(flags.color, "Filtres de couleur",
+    `Réglages Système → <b>Accessibilité → Affichage → Filtres de couleur</b> → essayez « Deutéranopie » puis « Protanopie » et gardez celui qui distingue le mieux vos écrans réels ; réglez l'intensité au minimum efficace.`);
+  R_(flags.strain, "Pauses et clignement",
+    `Règle 20-20-20 : toutes les 20 minutes, 20 secondes de regard à 6 m. Devant un écran on cligne 3× moins — forcez quelques clignements complets par minute ; en cas de sécheresse persistante, des larmes artificielles sans conservateur (pharmacie) soulagent bien.`);
+  R_(flags.strain, "Ambiance lumineuse",
+    `Écran ni plus lumineux ni plus sombre que la pièce, pas de fenêtre dans le dos ni face à vous. Night Shift (Réglages → <b>Écrans</b>) du coucher au lever du soleil réduit l'éblouissement du soir.`);
+  R_(false, "Ergonomie de base",
+    `Haut de l'écran à hauteur des yeux, à une longueur de bras. Un écran propre et sans reflets gagne facilement « un dixième » de confort.`);
+  const anyYou = recos.some(x=>x.you);
+
+  el.innerHTML = `<h2>Votre bilan</h2>
+    <p class="lede">Résumé de vos mesures du ${new Date().toLocaleDateString("fr-FR")}, puis les réglages
+    macOS classés — ceux marqués <span class="mono" style="color:var(--duo-red)">POUR VOUS</span>
+    répondent directement à vos résultats.</p>
+    <div class="card">${rows}</div>
+    ${flags.amsler ? `<div class="callout"><b>Important :</b> des déformations ou zones manquantes sur la grille d'Amsler
+      ne se corrigent par aucun réglage d'écran et méritent un avis ophtalmologique <b>rapide</b> (quelques jours, pas quelques mois).</div>` : ""}
+    ${flags.veryLow ? `<div class="callout"><b>Votre acuité de loin est nettement réduite.</b> Les réglages ci-dessous rendront le Mac utilisable,
+      mais à ce niveau une correction optique reste la vraie solution — et elle est souvent simple à obtenir.</div>` : ""}
+    <h3>Régler votre Mac${anyYou ? " — d'après vos résultats" : ""}</h3>
+    <div class="card">${
+      recos.sort((a,b)=>(b.you?1:0)-(a.you?1:0)).map(x=>
+        `<div class="reco"><div class="k ${x.you?"you":""}">${x.you?"Pour vous":"En général"}</div>
+         <div class="b"><b>${x.title}</b><span>${x.body}</span></div></div>`).join("")
+    }</div>
+    <div class="callout green"><b>Et le « filtre » ?</b> macOS n'a pas de filtre qui rende net ce qui est flou —
+    c'est une limite optique, pas logicielle. La combinaison qui s'en approche le plus :
+    <b>résolution « Texte plus grand » + zoom ctrl-molette + contraste renforcé</b>. Si malgré cela l'écran reste
+    inconfortable sans lunettes, c'est le signal qu'un équipement (même de simples lunettes « écran » à votre correction) est le bon outil.</div>
+    <div class="btnrow">
+      <button class="primary" id="copy">Copier le récapitulatif</button>
+      <button id="printres">Imprimer</button>
+      <button class="ghost" id="redo">Refaire le test</button>
+    </div>`;
+  try{ localStorage.setItem("okulist-last", JSON.stringify({date:new Date().toLocaleDateString("fr-FR"), res:r})); }catch(e){}
+  $("#redo").onclick=()=>{ S.res={}; goTo(0); };
+  $("#printres").onclick=()=>window.print();
+  $("#copy").onclick=async ()=>{
+    const L = ["Okulist — auto-dépistage du "+new Date().toLocaleDateString("fr-FR")+" (indicatif, non médical)",
+      "Distance de test : "+S.distCm+" cm"];
+    if(od!=null||og!=null) L.push("Acuité de loin : "+(od!=null?"OD "+od+"/10":"OD —")+", "+(og!=null?"OG "+og+"/10":"OG —"));
+    if(duos.length) L.push("Duochrome : "+["od","og"].map(e=>r["duo_"+e]?(e.toUpperCase()+" "+({red:"rouge",green:"vert",eq:"égal"})[r["duo_"+e]]):null).filter(Boolean).join(", "));
+    if(r.astig_od||r.astig_og) L.push("Astigmatisme : "+(flags.astig?"suspicion ("+astigTxt.join(", ")+")":"rien à signaler"));
+    if(r.contrast) L.push("Contraste : log CS ≈ "+r.contrast.logCS.toFixed(1));
+    if(r.near) L.push("Près (40 cm) : "+(r.near.mm==null?"aucune ligne confortable":"jusqu'à "+r.near.mm+" mm"));
+    if(r.amsler_od||r.amsler_og) L.push("Amsler : "+(flags.amsler?"anomalies signalées — consulter":"régulière"));
+    if(r.color) L.push("Couleurs : "+(r.color.ctrlOK ? r.color.good+"/"+r.color.total+" planches" : "non interprétable"));
+    if(r.strain) L.push("Fatigue visuelle : "+r.strain.score+"/"+r.strain.max);
+    try{
+      await navigator.clipboard.writeText(L.join("\n"));
+      $("#copy").textContent = "Copié ✓";
+      setTimeout(()=>{ const b=$("#copy"); if(b) b.textContent="Copier le récapitulatif"; }, 2000);
+    }catch(e){ alert(L.join("\n")); }
+  };
+  navRow(el, {noNext:true});
+}
+
+/* ---------------- assemble & start ---------------- */
+steps = [
+  { chip:"Calibrage", render: stepIntro },
+  { chip:"Calibrage", render: stepCalib },
+  acuityStep("od"), acuityStep("og"),
+  duoStep("od"), duoStep("og"),
+  astigStep("od"), astigStep("og"),
+  { chip:"Contraste", render: stepContrast },
+  { chip:"Près", render: stepNear },
+  amslerStep("od"), amslerStep("og"),
+  { chip:"Couleurs", render: stepColor },
+  { chip:"Fatigue", render: stepStrain },
+  { chip:"Bilan", render: stepResults }
+];
+goTo(0);
+</script>
