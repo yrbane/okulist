@@ -75,6 +75,33 @@ test("un test répondu apparaît dans le bilan", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test("l'historique trace l'évolution sur plusieurs bilans", async ({ page }) => {
+  const errors = await open(page);
+  // Deux séances passées avec acuité mesurée, pré-enregistrées.
+  await page.evaluate(() => {
+    localStorage.setItem("okulist-history", JSON.stringify([
+      { d: "2026-08-01", od: 8, og: 7, logCS: 1.5, near: 1.0, strain: 2 },
+      { d: "2026-08-15", od: 7, og: 7, logCS: 1.5, near: 1.25, strain: 4 }
+    ]));
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Commencer le calibrage" }).click();
+  await page.getByRole("button", { name: "Continuer" }).click();
+  await page.getByRole("button", { name: "Continuer" }).click();
+  for (let i = 0; i < 15; i++) {
+    await page.getByRole("button", { name: "Passer ce test →" }).click();
+  }
+  for (const row of await page.locator(".qrow").all()) {
+    await row.getByRole("button", { name: "Jamais" }).click();
+  }
+  await page.getByRole("button", { name: "Continuer" }).click();
+  await expect(page.locator("h2")).toContainText("Votre bilan");
+  await expect(page.locator("main")).toContainText("Évolution");
+  await expect(page.locator(".histwrap svg")).toBeVisible();
+  await expect(page.locator(".htable tr")).toHaveCount(4); // en-tête + 3 séances
+  expect(errors).toEqual([]);
+});
+
 test("le clavier répond au test d'acuité", async ({ page }) => {
   const errors = await open(page);
   await page.getByRole("button", { name: "Commencer le calibrage" }).click();

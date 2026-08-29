@@ -1,4 +1,6 @@
 <title>Okulist</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Public+Sans:wght@400;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap">
 <style>
@@ -8,6 +10,7 @@
   --duo-red:#D6453D; --duo-green:#169B62;
   --ok:#1D8A5B; --ok-bg:#E3F3EB; --warn:#B37A16; --warn-bg:#F8EFD9; --alert:#C2372F; --alert-bg:#FAE5E2;
   --btn:#1C2321; --btn-ink:#FAFBF9;
+  --chart-od:#3A66C4; --chart-og:#D08018;
   --display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
   --body:"Public Sans","Helvetica Neue",system-ui,sans-serif;
   --mono:"Spline Sans Mono","SF Mono",ui-monospace,monospace;
@@ -19,6 +22,7 @@
     --duo-red:#E96A61; --duo-green:#37B27F;
     --ok:#4CC392; --ok-bg:#173328; --warn:#DFAE4F; --warn-bg:#33290F; --alert:#EE7B71; --alert-bg:#3A1D1A;
     --btn:#E9EFEB; --btn-ink:#141917;
+    --chart-od:#4E79D9; --chart-og:#C9821F;
   }
 }
 :root[data-theme="dark"]{
@@ -27,6 +31,7 @@
   --duo-red:#E96A61; --duo-green:#37B27F;
   --ok:#4CC392; --ok-bg:#173328; --warn:#DFAE4F; --warn-bg:#33290F; --alert:#EE7B71; --alert-bg:#3A1D1A;
   --btn:#E9EFEB; --btn-ink:#141917;
+  --chart-od:#4E79D9; --chart-og:#C9821F;
 }
 *{box-sizing:border-box}
 body{background:var(--paper); color:var(--ink); font-family:var(--body); font-size:16px; line-height:1.55; margin:0; -webkit-font-smoothing:antialiased}
@@ -127,6 +132,17 @@ kbd{font-family:var(--mono); font-size:12.5px; background:var(--soft); border:1p
 .qrow .opts{display:flex; gap:6px}
 .qrow .opts button{padding:6px 12px; font-size:13.5px}
 .qrow .opts button.sel{background:var(--ink); color:var(--paper); border-color:var(--ink)}
+
+/* historique */
+.histwrap{position:relative}
+.histtip{position:absolute; pointer-events:none; font-family:var(--mono); font-size:12px; background:var(--ink); color:var(--paper); padding:5px 9px; border-radius:7px; white-space:nowrap; transform:translate(-50%,-130%); z-index:5}
+.histlegend{display:flex; gap:18px; font-size:13px; color:var(--muted); margin:4px 0 8px}
+.histlegend .dotod,.histlegend .dotog{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:baseline}
+.histlegend .dotod{background:var(--chart-od)} .histlegend .dotog{background:var(--chart-og)}
+.htable{overflow-x:auto}
+.htable table{border-collapse:collapse; font-size:13.5px; font-variant-numeric:tabular-nums; min-width:420px}
+.htable th{font-family:var(--mono); font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); text-align:left; padding:6px 14px 6px 0; border-bottom:1px solid var(--line)}
+.htable td{padding:6px 14px 6px 0; border-bottom:1px dashed var(--line); color:var(--ink)}
 
 /* webcam distance badge */
 #cambadge{position:fixed; right:14px; bottom:14px; z-index:50; font-family:var(--mono); font-size:13px; padding:8px 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--muted); cursor:pointer}
@@ -1245,6 +1261,84 @@ function stepStrain(el){
   nextBtn.disabled = true;
 }
 
+/* ---------------- historique des bilans ---------------- */
+function renderHistory(el, hist){
+  if(!el) return;
+  if(!hist || hist.length < 2){
+    el.innerHTML = hist && hist.length===1 ?
+      `<p class="mono" style="font-size:13px; color:var(--muted)">Premier bilan enregistré — l'évolution s'affichera à partir du deuxième.</p>` : "";
+    return;
+  }
+  const fmt = d => { const p=d.split("-"); return p[2]+"/"+p[1]; };
+  let html = `<h3>Évolution</h3><div class="card">`;
+
+  /* courbe d'acuité si au moins deux séances la mesurent */
+  const acu = hist.filter(h=>h.od!=null || h.og!=null);
+  if(acu.length >= 2){
+    const W=640, H=190, ml=34, mr=48, mt=14, mb=28;
+    const iw=W-ml-mr, ih=H-mt-mb;
+    const x = i => ml + i*iw/(acu.length-1);
+    const y = v => mt + (1 - v/12)*ih;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%; height:auto; display:block" role="img" aria-label="Évolution de l'acuité par œil">`;
+    for(const g of [0,4,8,12]){
+      svg += `<line x1="${ml}" y1="${y(g)}" x2="${W-mr}" y2="${y(g)}" stroke="var(--line)" stroke-width="1"/>
+        <text x="${ml-7}" y="${y(g)+4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--mono)">${g}</text>`;
+    }
+    acu.forEach((h,i)=>{
+      svg += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--mono)">${fmt(h.d)}</text>`;
+    });
+    const series = [["od","var(--chart-od)","OD"],["og","var(--chart-og)","OG"]];
+    for(const [key,color,label] of series){
+      const pts = acu.map((h,i)=>h[key]!=null ? [x(i), y(h[key]), i] : null);
+      let path = "", pen = false;
+      for(const p of pts){
+        if(!p){ pen=false; continue; }
+        path += (pen ? "L" : "M")+p[0].toFixed(1)+" "+p[1].toFixed(1)+" "; pen=true;
+      }
+      svg += `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
+      for(const p of pts){
+        if(!p) continue;
+        svg += `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${color}" stroke="var(--card)" stroke-width="2"/>
+          <circle cx="${p[0]}" cy="${p[1]}" r="11" fill="transparent" data-tip="${fmt(acu[p[2]].d)} · ${label} ${acu[p[2]][key]}/10" style="cursor:default"/>`;
+      }
+      const lastIdx = pts.map((p,i)=>p?i:null).filter(v=>v!=null).pop();
+      if(lastIdx!=null){
+        const lp = pts[lastIdx];
+        svg += `<text x="${lp[0]+10}" y="${lp[1]+4}" font-size="11" fill="var(--muted)" font-family="var(--mono)">${label}</text>`;
+      }
+    }
+    svg += `</svg>`;
+    html += `<div class="histlegend"><span><span class="dotod"></span>Œil droit</span><span><span class="dotog"></span>Œil gauche</span><span style="margin-left:auto">acuité, dixièmes</span></div>
+      <div class="histwrap">${svg}</div>`;
+  }
+
+  /* tableau de toutes les séances */
+  html += `<div class="htable" style="margin-top:14px"><table>
+    <tr><th>Date</th><th>OD</th><th>OG</th><th>log CS</th><th>Près (mm)</th><th>Fatigue</th></tr>
+    ${hist.map(h=>`<tr><td>${fmt(h.d)}</td><td>${h.od!=null?h.od+"/10":"—"}</td><td>${h.og!=null?h.og+"/10":"—"}</td>
+      <td>${h.logCS!=null?h.logCS.toFixed(1):"—"}</td><td>${h.near!=null?h.near.toLocaleString("fr-FR"):"—"}</td>
+      <td>${h.strain!=null?h.strain+"/12":"—"}</td></tr>`).join("")}
+  </table></div></div>`;
+  el.innerHTML = html;
+
+  /* infobulle au survol des points */
+  const wrap = el.querySelector(".histwrap");
+  if(wrap){
+    let tip = null;
+    wrap.querySelectorAll("circle[data-tip]").forEach(c=>{
+      c.addEventListener("mouseenter", ()=>{
+        tip = document.createElement("div"); tip.className="histtip";
+        tip.textContent = c.dataset.tip;
+        const wr = wrap.getBoundingClientRect(), cr = c.getBoundingClientRect();
+        tip.style.left = (cr.left+cr.width/2-wr.left)+"px";
+        tip.style.top = (cr.top-wr.top)+"px";
+        wrap.appendChild(tip);
+      });
+      c.addEventListener("mouseleave", ()=>{ if(tip){ tip.remove(); tip=null; } });
+    });
+  }
+}
+
 /* ---------------- results ---------------- */
 function pill(kind, txt){ return `<span class="pill ${kind}">${txt}</span>`; }
 function stepResults(el){
@@ -1432,6 +1526,19 @@ function stepResults(el){
       <button class="ghost" id="redo">Refaire le test</button>
     </div>`;
   try{ localStorage.setItem("okulist-last", JSON.stringify({date:new Date().toLocaleDateString("fr-FR"), res:r})); }catch(e){}
+  try{
+    const hist = JSON.parse(localStorage.getItem("okulist-history")||"[]");
+    const entry = { d: new Date().toISOString().slice(0,10), od, og,
+      logCS: r.contrast ? r.contrast.logCS : null,
+      near: r.near ? r.near.mm : null,
+      strain: r.strain ? r.strain.score : null };
+    if(od!=null || og!=null || entry.logCS!=null || entry.near!=null || entry.strain!=null){
+      const i = hist.findIndex(h=>h.d===entry.d);
+      if(i>=0) hist[i]=entry; else hist.push(entry);
+      localStorage.setItem("okulist-history", JSON.stringify(hist));
+    }
+    renderHistory($("#history"), hist);
+  }catch(e){}
   $("#redo").onclick=()=>{ S.res={}; goTo(0); };
   $("#printres").onclick=()=>window.print();
   $("#copy").onclick=async ()=>{
@@ -1478,4 +1585,9 @@ steps = [
 goTo(0);
 /* hook de test e2e */
 window.__okulist = { S, goTo, steps };
+
+/* PWA : uniquement en http(s) — inopérant en file:// ou hébergement restreint */
+if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
+  addEventListener("load", ()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); });
+}
 </script>
