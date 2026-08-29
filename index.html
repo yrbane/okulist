@@ -128,6 +128,14 @@ kbd{font-family:var(--mono); font-size:12.5px; background:var(--soft); border:1p
 .qrow .opts button{padding:6px 12px; font-size:13.5px}
 .qrow .opts button.sel{background:var(--ink); color:var(--paper); border-color:var(--ink)}
 
+/* webcam distance badge */
+#cambadge{position:fixed; right:14px; bottom:14px; z-index:50; font-family:var(--mono); font-size:13px; padding:8px 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--muted); cursor:pointer}
+#cambadge.good{border-color:var(--ok); color:var(--ok); background:var(--ok-bg)}
+#cambadge.bad{border-color:var(--warn); color:var(--warn); background:var(--warn-bg)}
+
+/* bouton lecture vocale */
+.speakbtn{font-size:15px; padding:4px 9px; margin-left:10px; vertical-align:middle; border-radius:8px}
+
 .footer{margin-top:44px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:13.5px}
 @media (prefers-reduced-motion: reduce){*{transition:none!important; animation:none!important}}
 @media print{
@@ -401,9 +409,11 @@ function goTo(i){
   cur = Math.max(0, Math.min(i, steps.length-1));
   keyHandler = null; spaceHandler = null;
   if(stepCleanup){ try{ stepCleanup(); }catch(e){} stepCleanup = null; }
+  try{ if("speechSynthesis" in window) speechSynthesis.cancel(); }catch(e){}
   stage.innerHTML = "";
   renderChips();
   steps[cur].render(stage);
+  injectSpeak();
   window.scrollTo({top:0});
 }
 const next = () => goTo(cur+1);
@@ -473,6 +483,112 @@ function dirPad8(onAnswer, cantSeeLabel){
   return wrapEl;
 }
 
+/* ---------------- lecture vocale des consignes ---------------- */
+function injectSpeak(){
+  const h2 = stage.querySelector("h2");
+  if(!h2 || !("speechSynthesis" in window)) return;
+  const b = document.createElement("button");
+  b.className = "ghost speakbtn"; b.textContent = "🔊";
+  b.title = "Lire les consignes à voix haute";
+  b.setAttribute("aria-label","Lire les consignes à voix haute");
+  b.onclick = ()=>{
+    try{
+      speechSynthesis.cancel();
+      const parts = [h2.textContent.replace("🔊","")];
+      const lede = stage.querySelector(".lede"); if(lede) parts.push(lede.textContent);
+      const eb = stage.querySelector(".eyebanner"); if(eb) parts.push(eb.textContent);
+      const u = new SpeechSynthesisUtterance(parts.join(". "));
+      u.lang = "fr-FR"; u.rate = 1.02;
+      speechSynthesis.speak(u);
+    }catch(e){}
+  };
+  h2.appendChild(b);
+}
+
+/* ---------------- suivi de distance par webcam ----------------
+ * Le diamètre de l'iris humain est quasi constant (11,7 mm) : une fois la
+ * focale de la caméra calibrée à distance connue, on estime la distance
+ * en continu. Tout est traité localement, aucune image ne quitte la machine. */
+const MP_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619";
+const CAM = { on:false, focal:null, irisPx:null, video:null, fm:null, timer:null };
+try{ const f = +localStorage.getItem("okulist-focal"); if(f>0) CAM.focal = f; }catch(e){}
+
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement("script"); s.src=src;
+    s.onload=res; s.onerror=()=>rej(new Error("script")); document.head.appendChild(s);
+  });
+}
+function camBadge(){
+  let b = document.getElementById("cambadge");
+  if(!b){
+    b = document.createElement("div"); b.id="cambadge";
+    b.title = "Suivi de distance — cliquer pour arrêter";
+    b.onclick = stopCam;
+    document.body.appendChild(b);
+  }
+  return b;
+}
+function irisPxFrom(lm, w, h){
+  const d=(a,b)=>Math.hypot((lm[a].x-lm[b].x)*w, (lm[a].y-lm[b].y)*h);
+  return (d(469,471) + d(474,476)) / 2; // extrémités horizontales des deux iris
+}
+function onCamResults(res){
+  const lm = res.multiFaceLandmarks && res.multiFaceLandmarks[0];
+  const badge = camBadge();
+  if(!lm || lm.length < 478){ badge.textContent = "📷 visage non détecté"; badge.className=""; CAM.irisPx=null; return; }
+  CAM.irisPx = irisPxFrom(lm, res.image.width, res.image.height);
+  if(CAM.focal){
+    const dist = core.distFromIris(CAM.irisPx, CAM.focal);
+    if(dist){
+      const ok = Math.abs(dist - S.distCm)/S.distCm <= 0.1;
+      badge.textContent = "📏 "+Math.round(dist)+" cm — cible "+S.distCm;
+      badge.className = ok ? "good" : "bad";
+    }
+  }else{
+    badge.textContent = "📷 caméra active — calibrez la distance";
+    badge.className = "";
+  }
+}
+async function camLoop(){
+  if(!CAM.on) return;
+  try{ await CAM.fm.send({image: CAM.video}); }catch(e){}
+  CAM.timer = setTimeout(camLoop, 400);
+}
+async function startCam(status){
+  try{
+    status("Chargement du modèle…");
+    if(!window.FaceMesh) await loadScript(MP_URL+"/face_mesh.js");
+    status("Accès à la caméra…");
+    const stream = await navigator.mediaDevices.getUserMedia({video:{width:640, height:480, facingMode:"user"}});
+    const video = document.createElement("video");
+    video.srcObject = stream; video.muted = true; video.playsInline = true;
+    await video.play();
+    CAM.video = video;
+    const fm = new FaceMesh({locateFile: f => MP_URL+"/"+f});
+    fm.setOptions({maxNumFaces:1, refineLandmarks:true});
+    fm.onResults(onCamResults);
+    CAM.fm = fm; CAM.on = true;
+    camBadge();
+    camLoop();
+    status("");
+    return true;
+  }catch(e){
+    stopCam();
+    status(e && e.name==="NotAllowedError"
+      ? "Accès caméra refusé — la distance déclarée sera utilisée."
+      : "Suivi indisponible ici (hors ligne ou hébergement restreint) — la distance déclarée sera utilisée.");
+    return false;
+  }
+}
+function stopCam(){
+  CAM.on = false;
+  clearTimeout(CAM.timer);
+  if(CAM.video && CAM.video.srcObject) CAM.video.srcObject.getTracks().forEach(t=>t.stop());
+  CAM.video = null;
+  const b = document.getElementById("cambadge"); if(b) b.remove();
+}
+
 /* ---------------- step: intro ---------------- */
 function stepIntro(el){
   let lastBilan = null;
@@ -529,6 +645,23 @@ function stepCalib(el){
       d'astigmatisme et de contraste.</p>
       <div class="presets" id="distpresets"></div>
       <label>Distance : <input type="number" id="distinput" min="30" max="200" step="5"> cm</label>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Suivi de distance par webcam <span class="mono" style="font-size:11px; color:var(--muted)">BÊTA</span></h3>
+      <p style="margin-top:0">La caméra estime en continu la distance de vos yeux grâce au diamètre de
+      l'iris (11,7 mm chez quasiment tous les adultes) et vous alerte si vous bougez pendant les tests.
+      <b>Tout est traité localement</b> — aucune image n'est enregistrée ni envoyée.</p>
+      <div class="btnrow" style="margin-top:8px">
+        <button id="camstart">${CAM.on ? "Suivi actif" : "Activer le suivi"}</button>
+      </div>
+      <p class="mono" id="camstatus" style="font-size:13px; color:var(--muted)"></p>
+      <div id="camcal" hidden>
+        <p style="margin:8px 0 6px">Calibrage de la focale : mesurez votre distance à l'écran avec un mètre,
+        entrez-la, puis cliquez sans bouger la tête.</p>
+        <label>Je suis à <input type="number" id="camdist" min="30" max="150" step="1" value="70"> cm</label>
+        <button id="camcalbtn" style="margin-left:8px">Calibrer</button>
+        <span class="mono" id="camcalmsg" style="font-size:13px"></span>
+      </div>
     </div>`;
   const box = $("#cardbox"), range = $("#cardrange"), val = $("#pxmmval");
   const CARD_MM = 85.6;
@@ -554,6 +687,24 @@ function stepCalib(el){
     pres.appendChild(b);
   });
   distIn.oninput = ()=>[...pres.children].forEach(x=>x.classList.remove("sel"));
+  const camStatus = t => { const s=$("#camstatus"); if(s) s.textContent = t; };
+  $("#camstart").onclick = async ()=>{
+    if(CAM.on){ camStatus("Le suivi est déjà actif."); $("#camcal").hidden = false; return; }
+    const ok = await startCam(camStatus);
+    if(ok){
+      $("#camstart").textContent = "Suivi actif";
+      $("#camcal").hidden = false;
+      if(CAM.focal) camStatus("Focale déjà calibrée sur cet appareil — recalibrez si vous avez changé de caméra.");
+    }
+  };
+  $("#camcalbtn").onclick = ()=>{
+    const msg = $("#camcalmsg");
+    if(!CAM.irisPx){ msg.textContent = " Visage non détecté — placez-vous face à la caméra."; return; }
+    const d = Math.max(30, Math.min(150, +$("#camdist").value || 70));
+    CAM.focal = core.focalFromIris(CAM.irisPx, d);
+    try{ localStorage.setItem("okulist-focal", String(CAM.focal)); }catch(e){}
+    msg.textContent = " Calibré ✓";
+  };
   navRow(el, {onNext(){
     S.distCm = Math.max(30, Math.min(200, +distIn.value || 70));
     saveCalib();
